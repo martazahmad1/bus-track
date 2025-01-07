@@ -390,6 +390,45 @@
         .fullscreen .fullscreen-icon {
             background-image: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZD0iTTE0IDE0aDV2MmgtN1Y5aDJ2NXpNNSA1aDV2MkgzdjdoMnYtNXpNMTAgM3Y2aDhWM2gtOHpNMyAxOWg4di02SDN2NnoiLz48L3N2Zz4=');
         }
+
+        @media (max-width: 767px) {
+            #left-panel {
+                width: var(--panel-width-mobile);
+                height: auto;
+                max-height: 40vh;
+                font-size: 12px;
+            }
+
+            .data-box h3 {
+                font-size: 14px;
+            }
+
+            .data-item {
+                font-size: 12px;
+                margin-bottom: 6px;
+            }
+
+            .label {
+                min-width: 80px;
+            }
+
+            #map-container {
+                height: 60vh;
+            }
+
+            .history-item {
+                font-size: 11px;
+                padding: 6px;
+            }
+        }
+
+        @media (max-width: 767px) {
+            body {
+                height: auto;
+                min-height: 100vh;
+                overflow-y: auto;
+            }
+        }
     </style>
 </head>
 <body>
@@ -568,12 +607,25 @@
             document.getElementById('history').innerHTML = '';
         }
 
-        // Initialize map
-        const map = L.map('map').setView([0, 0], 13);
+        // Initialize map with Chiniot coordinates
+        const CHINIOT_LAT = 31.7167;
+        const CHINIOT_LNG = 72.9833;
+        const map = L.map('map').setView([CHINIOT_LAT, CHINIOT_LNG], 14);  // Slightly higher zoom for city view
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap contributors'
+            attribution: '© OpenStreetMap contributors',
+            maxZoom: 19,
+            minZoom: 3
         }).addTo(map);
 
+        // Add a circle to indicate the default area
+        const defaultArea = L.circle([CHINIOT_LAT, CHINIOT_LNG], {
+            color: '#4CAF50',
+            fillColor: '#4CAF50',
+            fillOpacity: 0.2,
+            radius: 3000  // 3km radius, better for city size
+        }).addTo(map);
+
+        // This will be our bus marker when we get actual coordinates
         let marker = null;
         let updateCount = 0;
         const connectionStartTime = new Date();
@@ -656,12 +708,17 @@
                                 updateCount++;
                                 document.getElementById('updates-count').textContent = updateCount;
                                 
-                                // Update map marker
+                                // Update map marker with bus icon
                                 if (marker) {
                                     marker.setLatLng([message.latitude, message.longitude]);
                                 } else {
-                                    marker = L.marker([message.latitude, message.longitude]).addTo(map);
-                                    map.setView([message.latitude, message.longitude], 13);
+                                    // Remove default area circle when we get actual coordinates
+                                    if (defaultArea) {
+                                        map.removeLayer(defaultArea);
+                                        defaultArea = null;
+                                    }
+                                    marker = L.marker([message.latitude, message.longitude], {icon: busIcon}).addTo(map);
+                                    map.setView([message.latitude, message.longitude], 15);
                                 }
                                 
                                 // Add to history
@@ -839,12 +896,17 @@
                     updateCount++;
                     document.getElementById('updates-count').textContent = updateCount;
                     
-                    // Update map marker
+                    // Update map marker with bus icon
                     if (marker) {
                         marker.setLatLng([message.latitude, message.longitude]);
                     } else {
-                        marker = L.marker([message.latitude, message.longitude]).addTo(map);
-                        map.setView([message.latitude, message.longitude], 13);
+                        // Remove default area circle when we get actual coordinates
+                        if (defaultArea) {
+                            map.removeLayer(defaultArea);
+                            defaultArea = null;
+                        }
+                        marker = L.marker([message.latitude, message.longitude], {icon: busIcon}).addTo(map);
+                        map.setView([message.latitude, message.longitude], 15);
                     }
                     
                     // Add to history
@@ -897,6 +959,18 @@
                 mapElement.classList.remove('fullscreen');
             }
         }
+
+        // Create custom bus icon
+        const busIcon = L.divIcon({
+            className: 'bus-icon',
+            html: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+                    <path fill="#4CAF50" d="M4 16c0 1.1.9 2 2 2h1l1-1V9H4v7zm13.5-7H13V4.5h4.5V9zM6.5 4.5h4.5V9H6.5V4.5zM17 16c0 1.1.9 2 2 2h1l1-1V9h-4v7z"/>
+                    <path fill="#4CAF50" d="M18.1 1H5.9C4.9 1 4 1.9 4 2.9V9h16V2.9C20 1.9 19.1 1 18.1 1zM12 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/>
+                  </svg>`,
+            iconSize: [24, 24],
+            iconAnchor: [12, 12],
+            popupAnchor: [0, -12]
+        });
     </script>
 </body>
 </html> 
