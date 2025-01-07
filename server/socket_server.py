@@ -103,6 +103,14 @@ async def broadcast_to_websockets(data):
 
 async def process_request(path, request_headers):
     """Process HTTP requests before WebSocket upgrade"""
+    logger.info(f"Processing request: {path}")
+    logger.info(f"Headers: {request_headers}")
+    
+    # Handle WebSocket upgrade
+    if request_headers.get('Upgrade', '').lower() == 'websocket':
+        return None  # Let WebSocket handle the connection
+    
+    # Handle HTTP requests
     if path == "/" or path == "/index.html":
         content = read_frontend_file()
         if content:
@@ -113,16 +121,24 @@ async def process_request(path, request_headers):
                 ("Access-Control-Allow-Origin", "*"),
                 ("Access-Control-Allow-Headers", "*"),
                 ("Access-Control-Allow-Methods", "GET, POST, OPTIONS"),
+                ("Sec-WebSocket-Version", "13"),
+                ("Sec-WebSocket-Protocol", "bus-tracker"),
             ], content
-    return None  # Let WebSocket handle the connection
+    
+    # Return 404 for other paths
+    return HTTPStatus.NOT_FOUND, [], b"404 Not Found"
 
 async def handle_websocket(websocket, path):
     """Handle WebSocket connections"""
     try:
+        # Log connection details
+        client_info = websocket.remote_address
+        logger.info(f"New WebSocket connection attempt from {client_info}")
+        logger.info(f"WebSocket headers: {websocket.request_headers}")
+        
         # Add to clients set
         websocket_clients.add(websocket)
-        client_info = websocket.remote_address
-        logger.info(f"New WebSocket client connected from {client_info}")
+        logger.info(f"WebSocket client connected from {client_info}")
         
         # Send initial state if available
         if last_known_position:
@@ -149,6 +165,8 @@ async def handle_websocket(websocket, path):
             
     except Exception as e:
         logger.error(f"Connection error: {str(e)}")
+        if websocket in websocket_clients:
+            websocket_clients.remove(websocket)
 
 async def main():
     """Main function to start the server"""
@@ -166,7 +184,8 @@ async def main():
         max_size=10_485_760,  # 10MB max message size
         max_queue=32,
         close_timeout=10,
-        create_protocol=websockets.WebSocketServerProtocol
+        create_protocol=websockets.WebSocketServerProtocol,
+        subprotocols=['bus-tracker']
     )
     
     logger.info(f"Server started on port {PORT}")

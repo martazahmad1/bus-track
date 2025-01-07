@@ -586,93 +586,105 @@
                 : `${wsProtocol}//${window.location.host}`;
 
             console.log('Connecting to WebSocket:', wsUrl);
-            const ws = new WebSocket(wsUrl);
-
-            ws.onopen = () => {
-                console.log('WebSocket connection established');
-                lastBackendUpdate = Date.now();
-                document.getElementById('backend-status').textContent = 'Connected';
-                document.getElementById('backend-last-seen').textContent = new Date().toLocaleTimeString();
-                updateSystemStatus();
-            };
-
-            ws.onclose = () => {
-                console.log('WebSocket connection closed');
-                document.getElementById('backend-status').textContent = 'Disconnected';
-                updateSystemStatus();
-                // Try to reconnect after 5 seconds
-                setTimeout(initializeWebSocket, 5000);
-            };
-
-            ws.onerror = (error) => {
-                console.error('WebSocket error:', error);
-                document.getElementById('backend-status').textContent = 'Error';
-                updateSystemStatus();
-            };
-
-            ws.onmessage = (event) => {
-                lastBackendUpdate = Date.now();
-                document.getElementById('backend-last-seen').textContent = new Date().toLocaleTimeString();
+            
+            try {
+                const ws = new WebSocket(wsUrl, 'bus-tracker');
                 
-                const message = JSON.parse(event.data);
-                
-                if (message.type === "gps") {
-                    lastPicoUpdate = Date.now();
-                    document.getElementById('pico-last-seen').textContent = new Date().toLocaleTimeString();
+                ws.onopen = () => {
+                    console.log('WebSocket connection established');
+                    lastBackendUpdate = Date.now();
+                    document.getElementById('backend-status').textContent = 'Connected';
+                    document.getElementById('backend-last-seen').textContent = new Date().toLocaleTimeString();
+                    updateSystemStatus();
                     
-                    // Update module statuses
-                    if (message.status) {
-                        const status = message.status;
-                        
-                        // Update GPS status
-                        document.getElementById('gps-status').textContent = status.gps.status;
-                        updateStatusIndicator(status.gps.status, 'gps-status-indicator');
-                        
-                        // Update GSM status
-                        document.getElementById('gsm-status').textContent = status.gsm.status;
-                        updateStatusIndicator(status.gsm.status, 'gsm-status-indicator');
-                        
-                        // Update OLED status
-                        document.getElementById('oled-status').textContent = status.oled.status;
-                        updateStatusIndicator(status.oled.status, 'oled-status-indicator');
-                    }
+                    // Start sending ping messages
+                    setInterval(() => {
+                        if (ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({ type: 'ping' }));
+                        }
+                    }, 15000);
+                };
+
+                ws.onclose = (event) => {
+                    console.log('WebSocket connection closed:', event.code, event.reason);
+                    document.getElementById('backend-status').textContent = 'Disconnected';
+                    updateSystemStatus();
+                    // Try to reconnect after 5 seconds
+                    setTimeout(initializeWebSocket, 5000);
+                };
+
+                ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    document.getElementById('backend-status').textContent = 'Error';
+                    updateSystemStatus();
+                };
+
+                ws.onmessage = (event) => {
+                    console.log('Received message:', event.data);
+                    lastBackendUpdate = Date.now();
+                    document.getElementById('backend-last-seen').textContent = new Date().toLocaleTimeString();
                     
-                    // Update location if available
-                    if (message.latitude !== undefined && message.longitude !== undefined) {
-                        const location = {
-                            latitude: message.latitude,
-                            longitude: message.longitude,
-                            timestamp: message.server_time
-                        };
-                        locationHistory.push(location);
+                    try {
+                        const message = JSON.parse(event.data);
                         
-                        document.getElementById('current-lat').textContent = message.latitude.toFixed(6);
-                        document.getElementById('current-lon').textContent = message.longitude.toFixed(6);
-                        document.getElementById('last-update').textContent = message.server_time;
-                        updateCount++;
-                        document.getElementById('updates-count').textContent = updateCount;
-                        
-                        // Update map marker
-                        if (marker) {
-                            marker.setLatLng([message.latitude, message.longitude]);
-                        } else {
-                            marker = L.marker([message.latitude, message.longitude]).addTo(map);
-                            map.setView([message.latitude, message.longitude], 15);
+                        if (message.type === "gps") {
+                            lastPicoUpdate = Date.now();
+                            document.getElementById('pico-last-seen').textContent = new Date().toLocaleTimeString();
+                            
+                            // Update module statuses
+                            if (message.status) {
+                                const status = message.status;
+                                
+                                // Update GPS status
+                                document.getElementById('gps-status').textContent = status.gps.status;
+                                updateStatusIndicator(status.gps.status, 'gps-status-indicator');
+                                
+                                // Update GSM status
+                                document.getElementById('gsm-status').textContent = status.gsm.status;
+                                updateStatusIndicator(status.gsm.status, 'gsm-status-indicator');
+                                
+                                // Update OLED status
+                                document.getElementById('oled-status').textContent = status.oled.status;
+                                updateStatusIndicator(status.oled.status, 'oled-status-indicator');
+                            }
+                            
+                            // Update location if available
+                            if (message.latitude !== undefined && message.longitude !== undefined) {
+                                document.getElementById('current-lat').textContent = message.latitude.toFixed(6);
+                                document.getElementById('current-lon').textContent = message.longitude.toFixed(6);
+                                document.getElementById('last-update').textContent = message.server_time;
+                                updateCount++;
+                                document.getElementById('updates-count').textContent = updateCount;
+                                
+                                // Update map marker
+                                if (marker) {
+                                    marker.setLatLng([message.latitude, message.longitude]);
+                                } else {
+                                    marker = L.marker([message.latitude, message.longitude]).addTo(map);
+                                    map.setView([message.latitude, message.longitude], 13);
+                                }
+                                
+                                // Add to history
+                                addToHistory({
+                                    timestamp: message.server_time,
+                                    latitude: message.latitude,
+                                    longitude: message.longitude
+                                });
+                            }
                         }
                         
-                        // Add to history
-                        addToHistory({
-                            timestamp: message.server_time,
-                            latitude: message.latitude,
-                            longitude: message.longitude
-                        });
+                        updateSystemStatus();
+                    } catch (e) {
+                        console.error('Error processing message:', e);
                     }
-                }
-                
-                updateSystemStatus();
-            };
+                };
 
-            // Existing WebSocket event handlers...
+                return ws;
+            } catch (error) {
+                console.error('Error creating WebSocket:', error);
+                setTimeout(initializeWebSocket, 5000);
+                return null;
+            }
         }
 
         // Add panel toggle function for mobile
