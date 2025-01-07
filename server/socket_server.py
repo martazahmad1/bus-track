@@ -2,11 +2,11 @@ import socket
 import json
 import threading
 import datetime
-from websockets.server import serve
 import asyncio
 import logging
 import os
 from dotenv import load_dotenv
+import websockets
 
 # Load environment variables
 load_dotenv()
@@ -20,8 +20,7 @@ websocket_clients = set()
 
 # Socket Server Configuration
 HOST = '0.0.0.0'  # Listen on all available interfaces
-TCP_PORT = int(os.getenv('PORT', 8000))   # Use PORT from environment or default to 8000
-WS_PORT = TCP_PORT  # Use same port for WebSocket on Render
+PORT = int(os.getenv('PORT', 8000))   # Use PORT from environment or default to 8000
 
 # Store last known position
 last_known_position = None
@@ -66,85 +65,67 @@ async def broadcast_to_websockets(data):
         for client in disconnected:
             websocket_clients.remove(client)
 
-def handle_tcp_client(client_socket, address):
-    """Handle TCP connection from the Pico"""
-    logger.info(f"Accepted connection from {address}")
-    
-    buffer = ""
-    while True:
+class TCPProtocol(asyncio.Protocol):
+    def connection_made(self, transport):
+        self.transport = transport
+        self.address = transport.get_extra_info('peername')
+        self.buffer = ""
+        logger.info(f'TCP Connection from {self.address}')
+
+    def data_received(self, data):
         try:
-            # Receive data
-            data = client_socket.recv(1024).decode('utf-8')
-            if not data:
-                break
+            self.buffer += data.decode('utf-8')
             
-            buffer += data
-            
-            # Process complete JSON messages
-            while '\n' in buffer:
-                line, buffer = buffer.split('\n', 1)
+            while '\n' in self.buffer:
+                line, self.buffer = self.buffer.split('\n', 1)
                 try:
-                    # Parse JSON data
                     message = json.loads(line)
-                    
-                    # Add timestamp and source IP
                     message['server_time'] = datetime.datetime.now().strftime('%H:%M:%S')
-                    message['source_ip'] = address[0]
+                    message['source_ip'] = self.address[0]
                     
-                    # Log the received data
-                    logger.info(f"Received data from {address}: {message}")
+                    logger.info(f"Received data from {self.address}: {message}")
                     
-                    # Broadcast to WebSocket clients
-                    asyncio.run(broadcast_to_websockets(message))
+                    # Use asyncio.create_task to run broadcast_to_websockets
+                    asyncio.create_task(broadcast_to_websockets(message))
                     
-                    # Send acknowledgment back to Pico
-                    client_socket.send(b'OK\n')
-                    
+                    self.transport.write(b'OK\n')
                 except json.JSONDecodeError as e:
-                    logger.error(f"Invalid JSON received from {address}: {e}")
-                    client_socket.send(b'ERROR: Invalid JSON\n')
+                    logger.error(f"Invalid JSON received from {self.address}: {e}")
+                    self.transport.write(b'ERROR: Invalid JSON\n')
                 
         except Exception as e:
-            logger.error(f"Error handling client {address}: {e}")
-            break
-    
-    logger.info(f"Client {address} disconnected")
-    client_socket.close()
+            logger.error(f"Error handling TCP data: {e}")
 
-async def run_websocket_server():
-    """Run the WebSocket server for frontend connections"""
-    async with serve(websocket_handler, HOST, WS_PORT):
-        logger.info(f"WebSocket server started on port {WS_PORT}")
-        await asyncio.Future()  # run forever
+    def connection_lost(self, exc):
+        logger.info(f'TCP Connection closed from {self.address}')
 
-def run_tcp_server():
-    """Run the TCP server for Pico connections"""
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server.bind((HOST, TCP_PORT))
-    server.listen(5)
-    
-    logger.info(f"TCP server started on port {TCP_PORT}")
-    
-    while True:
-        client_sock, address = server.accept()
-        client_handler = threading.Thread(
-            target=handle_tcp_client,
-            args=(client_sock, address)
-        )
-        client_handler.start()
-
-def main():
+async def main():
     """Main function to start both servers"""
-    logger.info(f"Starting Bus Tracking Server on port {TCP_PORT}...")
+    logger.info(f"Starting Bus Tracking Server on port {PORT}...")
     
-    # Start TCP server in a separate thread
-    tcp_thread = threading.Thread(target=run_tcp_server)
-    tcp_thread.daemon = True
-    tcp_thread.start()
+    loop = asyncio.get_running_loop()
     
-    # Start WebSocket server in the main thread
-    asyncio.run(run_websocket_server())
+    # Create TCP server
+    tcp_server = await loop.create_server(
+        TCPProtocol,
+        HOST,
+        PORT
+    )
+    
+    # Create WebSocket server
+    ws_server = await websockets.serve(
+        websocket_handler,
+        HOST,
+        PORT + 1  # Use next port for WebSocket
+    )
+    
+    logger.info(f"TCP server started on port {PORT}")
+    logger.info(f"WebSocket server started on port {PORT + 1}")
+    
+    await asyncio.gather(
+        tcp_server.serve_forever(),
+        ws_server.serve_forever()
+    )
 
 if __name__ == "__main__":
-    main() 
+    asyncio.run(main()) 

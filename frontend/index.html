@@ -179,8 +179,12 @@
         const connectionStartTime = new Date();
         const maxHistoryItems = 50;
 
-        // Connect to WebSocket
-        const ws = new WebSocket('ws://localhost:8000/ws');
+        // Update WebSocket connection
+        const wsUrl = window.location.hostname === 'localhost' 
+            ? 'ws://localhost:8001'  // Local development
+            : `wss://${window.location.hostname}:${parseInt(window.location.port) + 1}`; // Production
+
+        const ws = new WebSocket(wsUrl);
 
         function updateConnectionTime() {
             const now = new Date();
