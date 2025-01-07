@@ -582,11 +582,33 @@
         function initializeWebSocket() {
             const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const wsUrl = window.location.hostname === 'localhost' 
-                ? `ws://localhost:10000`
+                ? 'ws://localhost:10000'
                 : `${wsProtocol}//${window.location.host}`;
 
             console.log('Connecting to WebSocket:', wsUrl);
             const ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                console.log('WebSocket connection established');
+                lastBackendUpdate = Date.now();
+                document.getElementById('backend-status').textContent = 'Connected';
+                document.getElementById('backend-last-seen').textContent = new Date().toLocaleTimeString();
+                updateSystemStatus();
+            };
+
+            ws.onclose = () => {
+                console.log('WebSocket connection closed');
+                document.getElementById('backend-status').textContent = 'Disconnected';
+                updateSystemStatus();
+                // Try to reconnect after 5 seconds
+                setTimeout(initializeWebSocket, 5000);
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                document.getElementById('backend-status').textContent = 'Error';
+                updateSystemStatus();
+            };
 
             ws.onmessage = (event) => {
                 lastBackendUpdate = Date.now();

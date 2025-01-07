@@ -101,56 +101,66 @@ async def broadcast_to_websockets(data):
             if client in websocket_clients:
                 websocket_clients.remove(client)
 
-async def handle_websocket(websocket, path):
-    """Handle WebSocket connections"""
+async def handle_http_request(path, request_headers):
+    """Handle HTTP requests"""
+    if path == "/" or path == "/index.html":
+        content = read_frontend_file()
+        if content:
+            return {
+                "status": HTTPStatus.OK,
+                "headers": {
+                    "Content-Type": "text/html",
+                    "Content-Length": str(len(content))
+                },
+                "body": content
+            }
+    return {
+        "status": HTTPStatus.NOT_FOUND,
+        "headers": {"Content-Type": "text/plain"},
+        "body": b"404 Not Found"
+    }
+
+async def handle_connection(websocket, path):
+    """Handle both HTTP and WebSocket connections"""
     try:
-        # Check if this is a frontend client (has proper WebSocket headers)
-        if websocket.request_headers.get('Upgrade', '').lower() == 'websocket':
-            # Handle frontend WebSocket client
-            websocket_clients.add(websocket)
-            client_info = websocket.remote_address
-            logger.info(f"New WebSocket client connected from {client_info}")
+        # Get request headers
+        headers = websocket.request_headers
+        
+        # Check if this is an HTTP request
+        if not headers.get('Upgrade', '').lower() == 'websocket':
+            # Handle HTTP request
+            response = await handle_http_request(path, headers)
+            response_headers = [
+                (name, value)
+                for name, value in response["headers"].items()
+            ]
+            await websocket.send_response(
+                status=response["status"],
+                headers=response_headers,
+                body=response["body"]
+            )
+            return
+
+        # Handle WebSocket connection
+        websocket_clients.add(websocket)
+        client_info = websocket.remote_address
+        logger.info(f"New WebSocket client connected from {client_info}")
+        
+        try:
+            async for message in websocket:
+                try:
+                    data = json.loads(message)
+                    logger.info(f"Received WebSocket message: {data}")
+                    await broadcast_to_websockets(data)
+                except json.JSONDecodeError:
+                    logger.warning(f"Invalid JSON from WebSocket client")
+        except Exception as e:
+            logger.error(f"WebSocket error: {str(e)}")
+        finally:
+            if websocket in websocket_clients:
+                websocket_clients.remove(websocket)
+            logger.info(f"WebSocket client disconnected")
             
-            try:
-                async for message in websocket:
-                    try:
-                        data = json.loads(message)
-                        logger.info(f"Received WebSocket message: {data}")
-                        await broadcast_to_websockets(data)
-                    except json.JSONDecodeError:
-                        logger.warning(f"Invalid JSON from WebSocket client")
-            except Exception as e:
-                logger.error(f"WebSocket error: {str(e)}")
-            finally:
-                if websocket in websocket_clients:
-                    websocket_clients.remove(websocket)
-                logger.info(f"WebSocket client disconnected")
-        else:
-            # Handle Pico TCP client
-            client_info = websocket.remote_address
-            logger.info(f"New TCP client connected from {client_info}")
-            
-            # Send welcome message
-            welcome = json.dumps({"status": "connected", "message": "Welcome to Bus Tracker Server"}) + "\n"
-            await websocket.send(welcome)
-            
-            try:
-                async for message in websocket:
-                    try:
-                        data = json.loads(message)
-                        data['server_time'] = datetime.datetime.now().strftime('%H:%M:%S')
-                        data['source_ip'] = client_info[0]
-                        logger.info(f"Received TCP message: {data}")
-                        await broadcast_to_websockets(data)
-                        await websocket.send('OK\n')
-                    except json.JSONDecodeError:
-                        logger.warning(f"Invalid JSON from TCP client")
-                        await websocket.send('ERROR: Invalid JSON\n')
-            except Exception as e:
-                if not str(e).startswith('[Errno 104]'):
-                    logger.error(f"TCP error: {str(e)}")
-            finally:
-                logger.info(f"TCP client disconnected")
     except Exception as e:
         logger.error(f"Connection error: {str(e)}")
 
@@ -158,8 +168,13 @@ async def main():
     """Main function to start the server"""
     logger.info(f"Starting Bus Tracking Server on port {PORT}...")
     
-    # Create WebSocket server
-    async with websockets.serve(handle_websocket, HOST, PORT) as server:
+    # Create server with both HTTP and WebSocket support
+    async with websockets.serve(
+        handle_connection,
+        HOST,
+        PORT,
+        process_request=handle_http_request
+    ) as server:
         logger.info(f"Server started on port {PORT}")
         await server.wait_closed()
 
