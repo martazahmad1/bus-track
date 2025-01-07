@@ -21,8 +21,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# WebSocket clients
+# Global variables for state management
+last_known_position = None
 websocket_clients = set()
+ws_server = None  # Global WebSocket server instance
 
 # Socket Server Configuration
 HOST = '0.0.0.0'  # Listen on all available interfaces
@@ -119,24 +121,51 @@ async def handle_http_request(first_line, headers, writer):
 async def websocket_handler(websocket):
     """Handle WebSocket connections from the frontend"""
     try:
+        # Add the new client to our set
         websocket_clients.add(websocket)
-        logger.info(f"New WebSocket client connected. Total clients: {len(websocket_clients)}")
+        client_info = websocket.remote_address
+        logger.info(f"New WebSocket client connected from {client_info}. Total clients: {len(websocket_clients)}")
         
-        # Send last known position if available
+        # Send initial state
         if last_known_position:
-            await websocket.send(json.dumps(last_known_position))
-        
-        # Keep the connection alive and handle incoming messages
-        async for message in websocket:
             try:
-                data = json.loads(message)
-                logger.info(f"Received WebSocket message: {data}")
-            except json.JSONDecodeError:
-                pass  # Ignore invalid JSON from WebSocket clients
-            
+                await websocket.send(json.dumps(last_known_position))
+                logger.info(f"Sent last known position to new client: {last_known_position}")
+            except Exception as e:
+                logger.error(f"Error sending initial state: {str(e)}")
+        
+        # Keep connection alive with periodic pings
+        while True:
+            try:
+                # Wait for a message or send a ping every 30 seconds
+                try:
+                    message = await asyncio.wait_for(websocket.recv(), timeout=30)
+                    # Process the received message
+                    data = json.loads(message)
+                    logger.info(f"Received WebSocket message from {client_info}: {data}")
+                    
+                    if isinstance(data, dict):
+                        message_type = data.get('type')
+                        if message_type == 'ping':
+                            await websocket.send(json.dumps({'type': 'pong'}))
+                        else:
+                            await broadcast_to_websockets(data)
+                except asyncio.TimeoutError:
+                    # Send a ping if no message received
+                    await websocket.ping()
+                    continue
+                
+            except websockets.exceptions.ConnectionClosed:
+                logger.info(f"WebSocket connection closed by client {client_info}")
+                break
+            except Exception as e:
+                logger.error(f"Error in WebSocket handler: {str(e)}")
+                break
+    
     finally:
+        # Clean up when the connection closes
         websocket_clients.remove(websocket)
-        logger.info(f"WebSocket client disconnected. Remaining clients: {len(websocket_clients)}")
+        logger.info(f"WebSocket client {client_info} disconnected. Remaining clients: {len(websocket_clients)}")
 
 async def broadcast_to_websockets(data):
     """Broadcast data to all connected WebSocket clients"""
@@ -186,12 +215,18 @@ async def handle_connection(reader, writer):
             # Handle WebSocket upgrade request
             if any(b"Upgrade: websocket" in line for line in headers):
                 logger.info("WebSocket connection detected")
-                ws_protocol = websockets.WebSocketServerProtocol(
-                    max_size=2**20,  # 1MB max message size
-                    max_queue=2**5,  # 32 messages max in queue
-                )
-                ws_protocol.connection_made(writer.transport)
-                await ws_protocol.handler(websocket_handler)
+                try:
+                    # Create WebSocket connection using the existing transport
+                    protocol = websockets.WebSocketServerProtocol(
+                        ws_handler=websocket_handler,
+                        ws_server=ws_server,
+                        max_size=2**20,  # 1MB max message size
+                        max_queue=2**5,  # 32 messages max in queue
+                    )
+                    protocol.connection_made(writer.transport)
+                    await protocol.handler()
+                except Exception as e:
+                    logger.error(f"WebSocket error: {str(e)}")
             else:
                 # Handle regular HTTP request
                 await handle_http_request(first_line, headers, writer)
@@ -247,8 +282,20 @@ async def handle_connection(reader, writer):
 
 async def main():
     """Main function to start the server"""
+    global ws_server
+    
     logger.info(f"Starting Bus Tracking Server on port {PORT}...")
     
+    # Create the WebSocket server
+    ws_server = websockets.WebSocketServer(
+        host=HOST,
+        port=PORT,
+        ping_interval=20,
+        ping_timeout=30,
+        close_timeout=10
+    )
+    
+    # Create the TCP server
     server = await asyncio.start_server(
         handle_connection,
         HOST,
@@ -260,5 +307,7 @@ async def main():
     async with server:
         await server.serve_forever()
 
+if __name__ == "__main__":
+    asyncio.run(main()) 
 if __name__ == "__main__":
     asyncio.run(main()) 
