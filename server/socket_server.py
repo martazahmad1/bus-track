@@ -19,7 +19,17 @@ websocket_clients = set()
 
 # Socket Server Configuration
 HOST = '0.0.0.0'  # Listen on all available interfaces
-PORT = int(os.getenv('PORT', 10000))   # Use port from Render
+PORT = int(os.getenv('PORT', 10000))   # Use port from Render.com environment
+
+# Add SSL/TLS support for secure WebSocket
+ssl_context = None
+if os.getenv('RENDER'):
+    import ssl
+    ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    cert_path = os.getenv('SSL_CERT_PATH')
+    key_path = os.getenv('SSL_KEY_PATH')
+    if cert_path and key_path:
+        ssl_context.load_cert_chain(cert_path, key_path)
 
 # Store last known position
 last_known_position = None
@@ -175,7 +185,8 @@ async def main():
     server = await asyncio.start_server(
         handle_connection,
         HOST,
-        PORT
+        PORT,
+        ssl=ssl_context
     )
     
     logger.info(f"Server started on port {PORT}")
