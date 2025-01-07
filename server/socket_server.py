@@ -31,10 +31,15 @@ HOST = '0.0.0.0'  # Listen on all available interfaces
 
 # Handle PORT environment variable with better error handling
 try:
+    # On Render.com, we must use the PORT environment variable
     PORT = int(os.getenv('PORT', '10000'))
+    if PORT == 10000 and os.getenv('RENDER'):
+        logger.warning("Running on Render.com but no PORT environment variable set")
 except (ValueError, TypeError):
     logger.warning("Invalid PORT environment variable, using default port 10000")
     PORT = 10000
+
+logger.info(f"Using port {PORT} for server")
 
 # Get the path to the frontend directory and file
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -286,10 +291,11 @@ async def main():
     
     logger.info(f"Starting Bus Tracking Server on port {PORT}...")
     
-    # Create the WebSocket server
-    ws_server = websockets.WebSocketServer(
-        host=HOST,
-        port=PORT,
+    # Create the WebSocket server with correct parameters
+    ws_server = await websockets.serve(
+        websocket_handler,
+        HOST,
+        PORT,
         ping_interval=20,
         ping_timeout=30,
         close_timeout=10
@@ -304,6 +310,7 @@ async def main():
     
     logger.info(f"Server started on port {PORT}")
     
+    # Run both servers
     async with server:
         await server.serve_forever()
 
