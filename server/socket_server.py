@@ -108,7 +108,11 @@ async def process_request(path, request_headers):
         if content:
             return HTTPStatus.OK, [
                 ("Content-Type", "text/html"),
-                ("Content-Length", str(len(content)))
+                ("Content-Length", str(len(content))),
+                ("Connection", "keep-alive"),
+                ("Access-Control-Allow-Origin", "*"),
+                ("Access-Control-Allow-Headers", "*"),
+                ("Access-Control-Allow-Methods", "GET, POST, OPTIONS"),
             ], content
     return None  # Let WebSocket handle the connection
 
@@ -119,6 +123,14 @@ async def handle_websocket(websocket, path):
         websocket_clients.add(websocket)
         client_info = websocket.remote_address
         logger.info(f"New WebSocket client connected from {client_info}")
+        
+        # Send initial state if available
+        if last_known_position:
+            try:
+                await websocket.send(json.dumps(last_known_position))
+                logger.info(f"Sent initial state to new client")
+            except Exception as e:
+                logger.error(f"Error sending initial state: {str(e)}")
         
         try:
             async for message in websocket:
@@ -143,16 +155,28 @@ async def main():
     logger.info(f"Starting Bus Tracking Server on port {PORT}...")
     
     # Create server with both HTTP and WebSocket support
-    async with websockets.serve(
+    server = await websockets.serve(
         handle_websocket,
         HOST,
         PORT,
         process_request=process_request,
         ping_interval=20,
-        ping_timeout=30
-    ) as server:
-        logger.info(f"Server started on port {PORT}")
+        ping_timeout=30,
+        compression=None,
+        max_size=10_485_760,  # 10MB max message size
+        max_queue=32,
+        close_timeout=10,
+        create_protocol=websockets.WebSocketServerProtocol
+    )
+    
+    logger.info(f"Server started on port {PORT}")
+    
+    try:
         await server.wait_closed()
+    except Exception as e:
+        logger.error(f"Server error: {str(e)}")
+    finally:
+        logger.info("Server shutting down...")
 
 if __name__ == "__main__":
     asyncio.run(main()) 
