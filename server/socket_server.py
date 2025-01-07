@@ -18,7 +18,8 @@ websocket_clients = set()
 
 # Socket Server Configuration
 HOST = '0.0.0.0'  # Listen on all available interfaces
-PORT = int(os.getenv('PORT', 10000))   # Use PORT from environment or default to 10000
+PORT = int(os.getenv('PORT', 10000))   # Main port from Render
+WS_PORT = PORT + 1  # WebSocket port will be main port + 1
 
 # Store last known position
 last_known_position = None
@@ -125,8 +126,8 @@ async def tcp_handler(reader, writer):
         logger.info(f'TCP Connection closed from {addr}')
 
 async def main():
-    """Main function to start the server"""
-    logger.info(f"Starting Bus Tracking Server on port {PORT}...")
+    """Main function to start both servers"""
+    logger.info(f"Starting Bus Tracking Server...")
     
     # Create TCP server
     tcp_server = await asyncio.start_server(
@@ -134,15 +135,15 @@ async def main():
         HOST,
         PORT
     )
+    logger.info(f"TCP server started on port {PORT}")
     
     # Create WebSocket server
     ws_server = await websockets.serve(
         websocket_handler,
         HOST,
-        PORT
+        WS_PORT
     )
-    
-    logger.info(f"Server started on port {PORT}")
+    logger.info(f"WebSocket server started on port {WS_PORT}")
     
     async with tcp_server, ws_server:
         await asyncio.gather(
