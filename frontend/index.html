@@ -360,6 +360,36 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+
+        .fullscreen-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 1000;
+            background: white;
+            border: 2px solid rgba(0,0,0,0.2);
+            border-radius: 4px;
+            padding: 5px;
+            cursor: pointer;
+            box-shadow: 0 1px 5px rgba(0,0,0,0.65);
+        }
+
+        .fullscreen-btn:hover {
+            background: #f4f4f4;
+        }
+
+        .fullscreen-icon {
+            width: 30px;
+            height: 30px;
+            background-image: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZD0iTTMgMTVoNnY2aDJ2LThINFYzSDJ2MTJoMXptMTQtNmgtMnY4aDd2LTJoLTV2LTZ6bTItMTJoLTJ2OGg4VjNoLTZ2LTJ6TTQgMTFoOFYzSDR2OHoiLz48L3N2Zz4=');
+            background-size: 20px 20px;
+            background-repeat: no-repeat;
+            background-position: center;
+        }
+
+        .fullscreen .fullscreen-icon {
+            background-image: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZD0iTTE0IDE0aDV2MmgtN1Y5aDJ2NXpNNSA1aDV2MkgzdjdoMnYtNXpNMTAgM3Y2aDhWM2gtOHpNMyAxOWg4di02SDN2NnoiLz48L3N2Zz4=');
+        }
     </style>
 </head>
 <body>
@@ -457,7 +487,11 @@
     </div>
 
     <div id="map-container">
-        <div id="map"></div>
+        <div id="map">
+            <button class="fullscreen-btn" onclick="toggleFullscreen()" title="Toggle fullscreen">
+                <div class="fullscreen-icon"></div>
+            </button>
+        </div>
         <div class="map-controls">
             <button class="map-button" onclick="centerOnBus()">
                 <span>Center on Bus</span>
@@ -790,6 +824,45 @@
             
             updateSystemStatus();
         };
+
+        function toggleFullscreen() {
+            const mapElement = document.getElementById('map');
+            
+            if (!document.fullscreenElement) {
+                // Enter fullscreen
+                if (mapElement.requestFullscreen) {
+                    mapElement.requestFullscreen();
+                } else if (mapElement.webkitRequestFullscreen) {
+                    mapElement.webkitRequestFullscreen();
+                } else if (mapElement.msRequestFullscreen) {
+                    mapElement.msRequestFullscreen();
+                }
+                mapElement.classList.add('fullscreen');
+            } else {
+                // Exit fullscreen
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                } else if (document.webkitExitFullscreen) {
+                    document.webkitExitFullscreen();
+                } else if (document.msExitFullscreen) {
+                    document.msExitFullscreen();
+                }
+                mapElement.classList.remove('fullscreen');
+            }
+        }
+
+        // Handle fullscreen change events
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
+        document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+        document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+        document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+
+        function handleFullscreenChange() {
+            const mapElement = document.getElementById('map');
+            if (!document.fullscreenElement) {
+                mapElement.classList.remove('fullscreen');
+            }
+        }
     </script>
 </body>
 </html> 
