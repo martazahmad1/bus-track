@@ -73,11 +73,17 @@ async def broadcast_to_websockets(data):
 async def handle_connection(reader, writer):
     """Handle incoming connections and route to appropriate handler"""
     try:
-        # Read the first line to determine if it's a WebSocket upgrade request
+        # Read the first line to determine the request type
         first_line = await reader.readline()
-        if b"GET" in first_line and b"HTTP/1.1" in first_line:
-            # This looks like a WebSocket connection
-            logger.info("WebSocket connection detected")
+        
+        # Handle health check requests (empty connections)
+        if not first_line:
+            writer.close()
+            return
+            
+        if b"GET" in first_line:
+            # This looks like an HTTP/WebSocket request
+            logger.info("HTTP/WebSocket request received")
             headers = []
             while True:
                 line = await reader.readline()
@@ -85,7 +91,23 @@ async def handle_connection(reader, writer):
                     break
                 headers.append(line)
             
+            # Check if it's a health check request
+            if b"GET / HTTP" in first_line:
+                # Send a simple 200 OK response
+                response = (
+                    b"HTTP/1.1 200 OK\r\n"
+                    b"Content-Type: text/plain\r\n"
+                    b"Connection: close\r\n"
+                    b"\r\n"
+                    b"Server is running"
+                )
+                writer.write(response)
+                await writer.drain()
+                return
+            
+            # Handle WebSocket upgrade request
             if any(b"Upgrade: websocket" in line for line in headers):
+                logger.info("WebSocket connection detected")
                 ws_protocol = websockets.WebSocketServerProtocol(
                     max_size=2**20,  # 1MB max message size
                     max_queue=2**5,  # 32 messages max in queue
@@ -97,7 +119,7 @@ async def handle_connection(reader, writer):
                 writer.write(b"HTTP/1.1 400 Bad Request\r\n\r\n")
                 await writer.drain()
         else:
-            # Handle as TCP connection
+            # Handle as TCP connection from Pico
             addr = writer.get_extra_info('peername')
             logger.info(f'TCP Connection from {addr}')
             
@@ -130,18 +152,21 @@ async def handle_connection(reader, writer):
                         await writer.drain()
                         
                 except json.JSONDecodeError as e:
-                    logger.warning(f"Invalid JSON received from {addr}: {e}")
+                    if buffer.strip():  # Only log if there's actual content
+                        logger.warning(f"Invalid JSON received from {addr}: {e}")
                     writer.write(b'ERROR: Invalid JSON\n')
                     await writer.drain()
                     
     except Exception as e:
-        logger.error(f"Connection error: {e}")
+        if not str(e).startswith('[Errno 104]'):  # Don't log normal connection resets
+            logger.error(f"Connection error: {e}")
     finally:
         writer.close()
         try:
             await writer.wait_closed()
         except Exception as e:
-            logger.error(f"Error closing connection: {e}")
+            if not str(e).startswith('[Errno 104]'):  # Don't log normal connection resets
+                logger.error(f"Error closing connection: {e}")
 
 async def main():
     """Main function to start the server"""
