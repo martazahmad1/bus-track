@@ -11,8 +11,14 @@ import pathlib
 # Load environment variables
 load_dotenv()
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
+# Configure logging with more detail
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler()
+    ]
+)
 logger = logging.getLogger(__name__)
 
 # WebSocket clients
@@ -29,52 +35,84 @@ except (ValueError, TypeError):
     PORT = 10000
 
 # Get the path to the frontend directory and file
-FRONTEND_DIR = pathlib.Path(__file__).parent.parent
-FRONTEND_FILE = FRONTEND_DIR / 'index.html'
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(CURRENT_DIR)
+POSSIBLE_PATHS = [
+    'index.html',  # Current directory
+    os.path.join(PROJECT_ROOT, 'index.html'),  # Project root
+    os.path.join(PROJECT_ROOT, 'frontend', 'index.html'),  # Frontend directory
+    '/opt/render/project/src/index.html'  # Render.com specific path
+]
 
-# Store last known position
-last_known_position = None
+logger.info(f"Current directory: {CURRENT_DIR}")
+logger.info(f"Project root: {PROJECT_ROOT}")
+logger.info(f"Looking for frontend file in multiple locations:")
+for path in POSSIBLE_PATHS:
+    logger.info(f"- {path}")
 
 def read_frontend_file():
     """Read the contents of the frontend HTML file"""
     try:
-        # Try current directory first
-        if os.path.exists('index.html'):
-            with open('index.html', 'rb') as f:
-                return f.read()
-        # Try frontend directory as fallback
-        elif os.path.exists(FRONTEND_FILE):
-            with open(FRONTEND_FILE, 'rb') as f:
-                return f.read()
-        else:
-            logger.error(f"Frontend file not found in current dir or at {FRONTEND_FILE}")
-            return None
+        # Try all possible paths
+        for path in POSSIBLE_PATHS:
+            if os.path.exists(path):
+                logger.info(f"Found index.html at: {path}")
+                with open(path, 'rb') as f:
+                    return f.read()
+        
+        # If no file found, log all directory contents
+        logger.error("Frontend file not found in any location")
+        logger.error("Current directory contents:")
+        logger.error(os.listdir('.'))
+        logger.error(f"Project root contents:")
+        logger.error(os.listdir(PROJECT_ROOT))
+        if os.path.exists('/opt/render/project/src'):
+            logger.error("Render project directory contents:")
+            logger.error(os.listdir('/opt/render/project/src'))
+        return None
     except Exception as e:
-        logger.error(f"Error reading frontend file: {e}")
+        logger.error(f"Error reading frontend file: {str(e)}")
         return None
 
 async def handle_http_request(first_line, headers, writer):
     """Handle HTTP requests and serve frontend files"""
-    if b"GET / HTTP" in first_line or b"GET /index.html HTTP" in first_line:
-        # Serve the frontend HTML file
-        content = read_frontend_file()
-        if content:
-            response = (
-                b"HTTP/1.1 200 OK\r\n"
-                b"Content-Type: text/html\r\n"
-                b"Connection: close\r\n"
-                b"\r\n"
-            )
-            writer.write(response + content)
-            logger.info("Successfully served frontend file")
+    try:
+        logger.info(f"Handling HTTP request: {first_line}")
+        if b"GET / HTTP" in first_line or b"GET /index.html HTTP" in first_line:
+            # Serve the frontend HTML file
+            content = read_frontend_file()
+            if content:
+                response = (
+                    b"HTTP/1.1 200 OK\r\n"
+                    b"Content-Type: text/html\r\n"
+                    b"Connection: close\r\n"
+                    b"\r\n"
+                )
+                writer.write(response + content)
+                logger.info("Successfully served frontend file")
+            else:
+                # If we can't read the file, send 500 error with message
+                error_message = b"Failed to load frontend file. Please check server logs."
+                writer.write(
+                    b"HTTP/1.1 500 Internal Server Error\r\n"
+                    b"Content-Type: text/plain\r\n"
+                    b"Content-Length: " + str(len(error_message)).encode() + b"\r\n"
+                    b"\r\n" + error_message
+                )
+                logger.error("Failed to serve frontend file")
         else:
-            # If we can't read the file, send 500 error
-            writer.write(b"HTTP/1.1 500 Internal Server Error\r\n\r\n")
-            logger.error("Failed to serve frontend file")
-    else:
-        # For any other path, send 404
-        writer.write(b"HTTP/1.1 404 Not Found\r\n\r\n")
-        logger.info(f"404 for path: {first_line}")
+            # For any other path, send 404 with message
+            error_message = b"Page not found"
+            writer.write(
+                b"HTTP/1.1 404 Not Found\r\n"
+                b"Content-Type: text/plain\r\n"
+                b"Content-Length: " + str(len(error_message)).encode() + b"\r\n"
+                b"\r\n" + error_message
+            )
+            logger.info(f"404 for path: {first_line}")
+    except Exception as e:
+        logger.error(f"Error handling HTTP request: {str(e)}")
+        writer.write(b"HTTP/1.1 500 Internal Server Error\r\n\r\n")
     
     await writer.drain()
 
