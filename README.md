@@ -1,19 +1,36 @@
-# Local Bus Tracking System
+# Realtime Bus Tracking System
 
-This project implements a local bus tracking system using a Raspberry Pi Pico with GPS module and a web interface for real-time tracking.
+This project implements a realtime bus tracking system using a Raspberry Pi Pico with GPS module and a web interface for live tracking. The system is deployed on Render.com for global accessibility.
 
 ## Project Structure
 
 ```
 .
 ├── pico_tracker/     # Raspberry Pi Pico GPS tracking code
-├── backend/          # FastAPI backend server
-└── frontend/         # Web interface with map
+├── server/          # WebSocket server for realtime communication
+└── frontend/         # Web interface with interactive map
 ```
 
-## Setup Instructions
+## Live Demo
 
-### 1. Raspberry Pi Pico Setup
+The system is deployed and accessible at: https://bus-track-otfv.onrender.com
+
+Access Key: `bus123`
+
+## Features
+
+- Real-time GPS tracking with live updates
+- Secure access with authentication
+- Interactive map interface with fullscreen support
+- Mobile-responsive design
+- WebSocket communication for instant updates
+- OLED display on the tracker for status information
+- Route history visualization
+- System status monitoring
+
+## Hardware Setup
+
+### Raspberry Pi Pico Setup
 
 1. Connect the hardware:
    - GPS Module (NEO-6M):
@@ -33,11 +50,10 @@ This project implements a local bus tracking system using a Raspberry Pi Pico wi
    - Copy `ssd1306.py` to the Pico
    - Copy `main.py` from `pico_tracker/` to the Pico
 
-### 2. Backend Setup
+## Server Setup
 
 1. Create a Python virtual environment:
 ```bash
-cd backend
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
@@ -47,36 +63,42 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-3. Run the server:
+3. Run the server locally:
 ```bash
-uvicorn main:app --reload
+python server/socket_server.py
 ```
 
-The backend will run on http://localhost:8000
+The server will run on port 10000
 
-### 3. Frontend Setup
+## Deployment
 
-1. Simply open `frontend/index.html` in a web browser
-2. The map will automatically connect to the backend via WebSocket
+The system is deployed on Render.com with the following configuration:
+
+1. Web Service Configuration:
+   - Environment: Python
+   - Build Command: Specified in render.yaml
+   - Start Command: `python server/socket_server.py`
+
+2. Environment Variables:
+   - PORT: Automatically set by Render
+   - RENDER: "true"
 
 ## Usage
 
-1. Power up the Raspberry Pi Pico with GPS module
-2. Start the backend server
-3. Open the frontend in a web browser
-4. The map will show the real-time position of the bus
-
-## Features
-
-- Real-time GPS tracking
-- WebSocket communication for live updates
-- Interactive map interface
-- OLED display on the tracker for status information
+1. Access the web interface at https://bus-track-otfv.onrender.com
+2. Enter the access key: `bus123`
+3. View real-time bus location on the map
+4. Use the control buttons to:
+   - Center on bus location
+   - View route history
+   - Toggle fullscreen mode
+   - Clear history
 
 ## Requirements
 
 - Raspberry Pi Pico with MicroPython
 - NEO-6M GPS Module
 - 0.96" OLED Display
-- Python 3.7+ for backend
+- GSM Module for internet connectivity
+- Python 3.9+ for server
 - Modern web browser for frontend 
