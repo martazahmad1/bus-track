@@ -71,13 +71,32 @@ class TCPProtocol(asyncio.Protocol):
         self.address = transport.get_extra_info('peername')
         self.buffer = ""
         logger.info(f'TCP Connection from {self.address}')
+        
+        # Send a welcome message
+        try:
+            self.transport.write(b'{"status":"connected","message":"Welcome to Bus Tracker Server"}\n')
+        except Exception as e:
+            logger.error(f"Error sending welcome message to {self.address}: {e}")
 
     def data_received(self, data):
         try:
-            self.buffer += data.decode('utf-8')
+            # Try to decode the data, handle encoding errors gracefully
+            try:
+                decoded_data = data.decode('utf-8')
+                self.buffer += decoded_data
+            except UnicodeDecodeError as e:
+                logger.warning(f"Received invalid UTF-8 data from {self.address}")
+                self.transport.write(b'ERROR: Invalid encoding\n')
+                return
             
+            # Process complete messages
             while '\n' in self.buffer:
                 line, self.buffer = self.buffer.split('\n', 1)
+                
+                # Skip empty lines
+                if not line.strip():
+                    continue
+                
                 try:
                     message = json.loads(line)
                     message['server_time'] = datetime.datetime.now().strftime('%H:%M:%S')
@@ -90,11 +109,18 @@ class TCPProtocol(asyncio.Protocol):
                     
                     self.transport.write(b'OK\n')
                 except json.JSONDecodeError as e:
-                    logger.error(f"Invalid JSON received from {self.address}: {e}")
+                    logger.warning(f"Invalid JSON received from {self.address}: {e}")
                     self.transport.write(b'ERROR: Invalid JSON\n')
+                except Exception as e:
+                    logger.error(f"Error processing message from {self.address}: {e}")
+                    self.transport.write(b'ERROR: Internal server error\n')
                 
         except Exception as e:
-            logger.error(f"Error handling TCP data: {e}")
+            logger.error(f"Error handling TCP data from {self.address}: {e}")
+            try:
+                self.transport.write(b'ERROR: Internal server error\n')
+            except:
+                pass
 
     def connection_lost(self, exc):
         logger.info(f'TCP Connection closed from {self.address}')

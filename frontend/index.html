@@ -106,14 +106,40 @@
 </head>
 <body>
     <div id="left-panel">
-        <div id="connection-status">Status: Connecting...</div>
+        <div class="data-box">
+            <h3>System Status</h3>
+            <div class="data-item">
+                <span class="label">Overall Status:</span>
+                <span class="status-indicator" id="system-status-indicator"></span>
+                <span class="value" id="system-status">Initializing</span>
+            </div>
+            <div class="data-item">
+                <span class="label">Backend:</span>
+                <span class="status-indicator" id="backend-status-indicator"></span>
+                <span class="value" id="backend-status">Connecting...</span>
+            </div>
+            <div class="data-item">
+                <span class="label">Last Backend Response:</span>
+                <span class="value" id="backend-last-seen">Never</span>
+            </div>
+        </div>
         
         <div class="data-box">
             <h3>Pico Status</h3>
             <div class="data-item">
+                <span class="label">Connection:</span>
+                <span class="status-indicator" id="pico-conn-status-indicator"></span>
+                <span class="value" id="pico-conn-status">Waiting...</span>
+            </div>
+            <div class="data-item">
                 <span class="label">GPS Module:</span>
                 <span class="status-indicator" id="gps-status-indicator"></span>
                 <span class="value" id="gps-status">Unknown</span>
+            </div>
+            <div class="data-item">
+                <span class="label">GSM Module:</span>
+                <span class="status-indicator" id="gsm-status-indicator"></span>
+                <span class="value" id="gsm-status">Unknown</span>
             </div>
             <div class="data-item">
                 <span class="label">OLED Display:</span>
@@ -231,52 +257,125 @@
             }
         }
 
+        let lastPicoUpdate = 0;
+        let lastBackendUpdate = 0;
+        const TIMEOUT_THRESHOLD = 30000; // 30 seconds
+
+        function updateSystemStatus() {
+            const now = Date.now();
+            const backendActive = (now - lastBackendUpdate) < TIMEOUT_THRESHOLD;
+            const picoActive = (now - lastPicoUpdate) < TIMEOUT_THRESHOLD;
+            
+            // Update backend status
+            const backendStatus = document.getElementById('backend-status');
+            const backendIndicator = document.getElementById('backend-status-indicator');
+            if (backendActive) {
+                backendStatus.textContent = 'Connected';
+                backendIndicator.className = 'status-indicator status-ok';
+            } else {
+                backendStatus.textContent = 'Disconnected';
+                backendIndicator.className = 'status-indicator status-error';
+            }
+
+            // Update Pico connection status
+            const picoConnStatus = document.getElementById('pico-conn-status');
+            const picoConnIndicator = document.getElementById('pico-conn-status-indicator');
+            if (picoActive) {
+                picoConnStatus.textContent = 'Connected';
+                picoConnIndicator.className = 'status-indicator status-ok';
+            } else {
+                picoConnStatus.textContent = 'Disconnected';
+                picoConnIndicator.className = 'status-indicator status-error';
+            }
+
+            // Update overall system status
+            const systemStatus = document.getElementById('system-status');
+            const systemIndicator = document.getElementById('system-status-indicator');
+            if (backendActive && picoActive) {
+                systemStatus.textContent = 'Fully Operational';
+                systemIndicator.className = 'status-indicator status-ok';
+            } else if (backendActive) {
+                systemStatus.textContent = 'Partially Operational (No Pico)';
+                systemIndicator.className = 'status-indicator status-warning';
+            } else {
+                systemStatus.textContent = 'System Offline';
+                systemIndicator.className = 'status-indicator status-error';
+            }
+        }
+
+        // Add warning status style
+        const style = document.createElement('style');
+        style.textContent = `
+            .status-warning {
+                background-color: #ff9800;
+            }
+        `;
+        document.head.appendChild(style);
+
+        setInterval(updateSystemStatus, 1000);
+
         ws.onopen = () => {
-            const statusDiv = document.getElementById('connection-status');
-            statusDiv.textContent = 'Status: Connected';
-            statusDiv.className = 'connected';
+            lastBackendUpdate = Date.now();
+            document.getElementById('backend-last-seen').textContent = new Date().toLocaleTimeString();
         };
 
         ws.onclose = () => {
-            const statusDiv = document.getElementById('connection-status');
-            statusDiv.textContent = 'Status: Disconnected';
-            statusDiv.className = 'disconnected';
+            updateSystemStatus();
         };
 
         ws.onmessage = (event) => {
+            lastBackendUpdate = Date.now();
+            document.getElementById('backend-last-seen').textContent = new Date().toLocaleTimeString();
+            
             const message = JSON.parse(event.data);
             
-            if (message.type === "gps_data") {
-                const data = message.data;
-                updateCount++;
+            if (message.type === "gps") {
+                lastPicoUpdate = Date.now();
+                document.getElementById('pico-last-seen').textContent = new Date().toLocaleTimeString();
                 
-                // Update current location
-                document.getElementById('current-lat').textContent = data.latitude.toFixed(6);
-                document.getElementById('current-lon').textContent = data.longitude.toFixed(6);
-                document.getElementById('last-update').textContent = formatTimestamp(data.timestamp);
-                document.getElementById('updates-count').textContent = updateCount;
-
-                // Add to history
-                addToHistory(data);
-                
-                // Update marker position
-                if (marker) {
-                    marker.setLatLng([data.latitude, data.longitude]);
-                } else {
-                    marker = L.marker([data.latitude, data.longitude]).addTo(map);
-                    map.setView([data.latitude, data.longitude], 13);
+                // Update module statuses
+                if (message.status) {
+                    const status = message.status;
+                    
+                    // Update GPS status
+                    document.getElementById('gps-status').textContent = status.gps.status;
+                    updateStatusIndicator(status.gps.status, 'gps-status-indicator');
+                    
+                    // Update GSM status
+                    document.getElementById('gsm-status').textContent = status.gsm.status;
+                    updateStatusIndicator(status.gsm.status, 'gsm-status-indicator');
+                    
+                    // Update OLED status
+                    document.getElementById('oled-status').textContent = status.oled.status;
+                    updateStatusIndicator(status.oled.status, 'oled-status-indicator');
                 }
-            } else if (message.type === "pico_status") {
-                const status = message.data;
                 
-                // Update Pico status indicators
-                document.getElementById('gps-status').textContent = status.gps_status;
-                document.getElementById('oled-status').textContent = status.oled_status;
-                document.getElementById('pico-last-seen').textContent = status.last_seen || 'Never';
-                
-                updateStatusIndicator(status.gps_status, 'gps-status-indicator');
-                updateStatusIndicator(status.oled_status, 'oled-status-indicator');
+                // Update location if available
+                if (message.latitude !== undefined && message.longitude !== undefined) {
+                    document.getElementById('current-lat').textContent = message.latitude.toFixed(6);
+                    document.getElementById('current-lon').textContent = message.longitude.toFixed(6);
+                    document.getElementById('last-update').textContent = message.server_time;
+                    updateCount++;
+                    document.getElementById('updates-count').textContent = updateCount;
+                    
+                    // Update map marker
+                    if (marker) {
+                        marker.setLatLng([message.latitude, message.longitude]);
+                    } else {
+                        marker = L.marker([message.latitude, message.longitude]).addTo(map);
+                        map.setView([message.latitude, message.longitude], 13);
+                    }
+                    
+                    // Add to history
+                    addToHistory({
+                        timestamp: message.server_time,
+                        latitude: message.latitude,
+                        longitude: message.longitude
+                    });
+                }
             }
+            
+            updateSystemStatus();
         };
     </script>
 </body>
