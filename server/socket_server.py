@@ -1,12 +1,10 @@
-import socket
-import json
-import threading
-import datetime
 import asyncio
+import websockets
+import json
+import datetime
 import logging
 import os
 from dotenv import load_dotenv
-import websockets
 
 # Load environment variables
 load_dotenv()
@@ -20,7 +18,7 @@ websocket_clients = set()
 
 # Socket Server Configuration
 HOST = '0.0.0.0'  # Listen on all available interfaces
-PORT = int(os.getenv('PORT', 8000))   # Use PORT from environment or default to 8000
+PORT = int(os.getenv('PORT', 10000))   # Use PORT from environment or default to 10000
 
 # Store last known position
 last_known_position = None
@@ -65,93 +63,92 @@ async def broadcast_to_websockets(data):
         for client in disconnected:
             websocket_clients.remove(client)
 
-class TCPProtocol(asyncio.Protocol):
-    def connection_made(self, transport):
-        self.transport = transport
-        self.address = transport.get_extra_info('peername')
-        self.buffer = ""
-        logger.info(f'TCP Connection from {self.address}')
+async def tcp_handler(reader, writer):
+    """Handle TCP connections from the Pico"""
+    addr = writer.get_extra_info('peername')
+    logger.info(f'TCP Connection from {addr}')
+    
+    try:
+        # Send welcome message
+        welcome = json.dumps({"status": "connected", "message": "Welcome to Bus Tracker Server"}) + "\n"
+        writer.write(welcome.encode())
+        await writer.drain()
         
-        # Send a welcome message
-        try:
-            self.transport.write(b'{"status":"connected","message":"Welcome to Bus Tracker Server"}\n')
-        except Exception as e:
-            logger.error(f"Error sending welcome message to {self.address}: {e}")
-
-    def data_received(self, data):
-        try:
-            # Try to decode the data, handle encoding errors gracefully
+        buffer = ""
+        while True:
             try:
-                decoded_data = data.decode('utf-8')
-                self.buffer += decoded_data
-            except UnicodeDecodeError as e:
-                logger.warning(f"Received invalid UTF-8 data from {self.address}")
-                self.transport.write(b'ERROR: Invalid encoding\n')
-                return
-            
-            # Process complete messages
-            while '\n' in self.buffer:
-                line, self.buffer = self.buffer.split('\n', 1)
-                
-                # Skip empty lines
-                if not line.strip():
-                    continue
+                # Read data
+                data = await reader.read(1024)
+                if not data:
+                    break
                 
                 try:
-                    message = json.loads(line)
-                    message['server_time'] = datetime.datetime.now().strftime('%H:%M:%S')
-                    message['source_ip'] = self.address[0]
+                    # Decode and buffer the data
+                    buffer += data.decode('utf-8')
                     
-                    logger.info(f"Received data from {self.address}: {message}")
-                    
-                    # Use asyncio.create_task to run broadcast_to_websockets
-                    asyncio.create_task(broadcast_to_websockets(message))
-                    
-                    self.transport.write(b'OK\n')
+                    # Process complete messages
+                    while '\n' in buffer:
+                        line, buffer = buffer.split('\n', 1)
+                        if not line.strip():
+                            continue
+                            
+                        # Parse JSON message
+                        message = json.loads(line)
+                        message['server_time'] = datetime.datetime.now().strftime('%H:%M:%S')
+                        message['source_ip'] = addr[0]
+                        
+                        logger.info(f"Received data from {addr}: {message}")
+                        
+                        # Broadcast to WebSocket clients
+                        await broadcast_to_websockets(message)
+                        
+                        # Send acknowledgment
+                        writer.write(b'OK\n')
+                        await writer.drain()
+                        
                 except json.JSONDecodeError as e:
-                    logger.warning(f"Invalid JSON received from {self.address}: {e}")
-                    self.transport.write(b'ERROR: Invalid JSON\n')
-                except Exception as e:
-                    logger.error(f"Error processing message from {self.address}: {e}")
-                    self.transport.write(b'ERROR: Internal server error\n')
+                    logger.warning(f"Invalid JSON received from {addr}: {e}")
+                    writer.write(b'ERROR: Invalid JSON\n')
+                    await writer.drain()
+                    
+            except Exception as e:
+                logger.error(f"Error handling TCP data from {addr}: {e}")
+                writer.write(b'ERROR: Internal server error\n')
+                await writer.drain()
+                break
                 
-        except Exception as e:
-            logger.error(f"Error handling TCP data from {self.address}: {e}")
-            try:
-                self.transport.write(b'ERROR: Internal server error\n')
-            except:
-                pass
-
-    def connection_lost(self, exc):
-        logger.info(f'TCP Connection closed from {self.address}')
+    except Exception as e:
+        logger.error(f"TCP Connection error from {addr}: {e}")
+    finally:
+        writer.close()
+        await writer.wait_closed()
+        logger.info(f'TCP Connection closed from {addr}')
 
 async def main():
-    """Main function to start both servers"""
+    """Main function to start the server"""
     logger.info(f"Starting Bus Tracking Server on port {PORT}...")
     
-    loop = asyncio.get_running_loop()
-    
     # Create TCP server
-    tcp_server = await loop.create_server(
-        TCPProtocol,
+    tcp_server = await asyncio.start_server(
+        tcp_handler,
         HOST,
         PORT
     )
     
-    # Create WebSocket server on the same port in production
+    # Create WebSocket server
     ws_server = await websockets.serve(
         websocket_handler,
         HOST,
-        PORT  # Use same port for WebSocket in production
+        PORT
     )
     
-    logger.info(f"TCP server started on port {PORT}")
-    logger.info(f"WebSocket server started on port {PORT}")
+    logger.info(f"Server started on port {PORT}")
     
-    await asyncio.gather(
-        tcp_server.serve_forever(),
-        ws_server.serve_forever()
-    )
+    async with tcp_server, ws_server:
+        await asyncio.gather(
+            tcp_server.serve_forever(),
+            ws_server.serve_forever()
+        )
 
 if __name__ == "__main__":
     asyncio.run(main()) 

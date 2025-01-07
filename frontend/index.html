@@ -207,8 +207,8 @@
 
         // Update WebSocket connection
         const wsUrl = window.location.hostname === 'localhost' 
-            ? 'ws://localhost:8001'  // Local development
-            : 'wss://bus-track-t9dd.onrender.com'; // Production Render.com URL
+            ? 'ws://localhost:10000'  // Local development
+            : `wss://bus-track-t9dd.onrender.com/ws`;  // Production Render.com URL
 
         console.log('Connecting to WebSocket:', wsUrl);
         const ws = new WebSocket(wsUrl);
