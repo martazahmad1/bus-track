@@ -208,7 +208,7 @@
         // Update WebSocket connection
         const wsUrl = window.location.hostname === 'localhost' 
             ? 'ws://localhost:10000'  // Local development
-            : window.location.href.replace('http', 'ws');  // Production: convert current URL to WebSocket
+            : window.location.href.replace(/^http/, 'ws');  // Production: convert current URL to WebSocket
 
         console.log('Connecting to WebSocket:', wsUrl);
         const ws = new WebSocket(wsUrl);

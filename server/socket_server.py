@@ -5,6 +5,7 @@ import datetime
 import logging
 import os
 from dotenv import load_dotenv
+from http import HTTPStatus
 
 # Load environment variables
 load_dotenv()
@@ -18,12 +19,12 @@ websocket_clients = set()
 
 # Socket Server Configuration
 HOST = '0.0.0.0'  # Listen on all available interfaces
-PORT = int(os.getenv('PORT', 10000))   # Use single port from Render
+PORT = int(os.getenv('PORT', 10000))   # Use port from Render
 
 # Store last known position
 last_known_position = None
 
-async def websocket_handler(websocket, path):
+async def websocket_handler(websocket):
     """Handle WebSocket connections from the frontend"""
     try:
         websocket_clients.add(websocket)
@@ -69,46 +70,62 @@ async def broadcast_to_websockets(data):
         for client in disconnected:
             websocket_clients.remove(client)
 
-async def tcp_handler(reader, writer):
-    """Handle TCP connections from the Pico"""
-    addr = writer.get_extra_info('peername')
-    logger.info(f'TCP Connection from {addr}')
-    
+async def handle_connection(reader, writer):
+    """Handle incoming connections and route to appropriate handler"""
     try:
-        # Send welcome message
-        welcome = json.dumps({"status": "connected", "message": "Welcome to Bus Tracker Server"}) + "\n"
-        writer.write(welcome.encode())
-        await writer.drain()
-        
-        buffer = ""
-        while True:
-            try:
-                # Read data
+        # Read the first line to determine if it's a WebSocket upgrade request
+        first_line = await reader.readline()
+        if b"GET" in first_line and b"HTTP/1.1" in first_line:
+            # This looks like a WebSocket connection
+            logger.info("WebSocket connection detected")
+            headers = []
+            while True:
+                line = await reader.readline()
+                if line == b'\r\n':
+                    break
+                headers.append(line)
+            
+            if any(b"Upgrade: websocket" in line for line in headers):
+                ws_protocol = websockets.WebSocketServerProtocol(
+                    max_size=2**20,  # 1MB max message size
+                    max_queue=2**5,  # 32 messages max in queue
+                )
+                ws_protocol.connection_made(writer.transport)
+                await ws_protocol.handler(websocket_handler)
+            else:
+                # Regular HTTP request, send 400 Bad Request
+                writer.write(b"HTTP/1.1 400 Bad Request\r\n\r\n")
+                await writer.drain()
+        else:
+            # Handle as TCP connection
+            addr = writer.get_extra_info('peername')
+            logger.info(f'TCP Connection from {addr}')
+            
+            # Send welcome message
+            welcome = json.dumps({"status": "connected", "message": "Welcome to Bus Tracker Server"}) + "\n"
+            writer.write(welcome.encode())
+            await writer.drain()
+            
+            buffer = ""
+            while True:
                 data = await reader.read(1024)
                 if not data:
                     break
                 
                 try:
-                    # Decode and buffer the data
                     buffer += data.decode('utf-8')
-                    
-                    # Process complete messages
                     while '\n' in buffer:
                         line, buffer = buffer.split('\n', 1)
                         if not line.strip():
                             continue
-                            
-                        # Parse JSON message
+                        
                         message = json.loads(line)
                         message['server_time'] = datetime.datetime.now().strftime('%H:%M:%S')
                         message['source_ip'] = addr[0]
                         
                         logger.info(f"Received data from {addr}: {message}")
-                        
-                        # Broadcast to WebSocket clients
                         await broadcast_to_websockets(message)
                         
-                        # Send acknowledgment
                         writer.write(b'OK\n')
                         await writer.drain()
                         
@@ -117,48 +134,29 @@ async def tcp_handler(reader, writer):
                     writer.write(b'ERROR: Invalid JSON\n')
                     await writer.drain()
                     
-            except Exception as e:
-                logger.error(f"Error handling TCP data from {addr}: {e}")
-                writer.write(b'ERROR: Internal server error\n')
-                await writer.drain()
-                break
-                
     except Exception as e:
-        logger.error(f"TCP Connection error from {addr}: {e}")
+        logger.error(f"Connection error: {e}")
     finally:
         writer.close()
         try:
             await writer.wait_closed()
         except Exception as e:
-            logger.error(f"Error closing connection from {addr}: {e}")
-        logger.info(f'TCP Connection closed from {addr}')
+            logger.error(f"Error closing connection: {e}")
 
 async def main():
-    """Main function to start both servers"""
+    """Main function to start the server"""
     logger.info(f"Starting Bus Tracking Server on port {PORT}...")
     
-    # Create TCP server
-    tcp_server = await asyncio.start_server(
-        tcp_handler,
+    server = await asyncio.start_server(
+        handle_connection,
         HOST,
         PORT
     )
-    logger.info(f"TCP server started on port {PORT}")
     
-    # Create WebSocket server on the same port
-    ws_server = await websockets.serve(
-        websocket_handler,
-        HOST,
-        PORT,
-        process_request=lambda p, r: None  # Allow all paths
-    )
-    logger.info(f"WebSocket server started on port {PORT}")
+    logger.info(f"Server started on port {PORT}")
     
-    async with tcp_server, ws_server:
-        await asyncio.gather(
-            tcp_server.serve_forever(),
-            ws_server.serve_forever()
-        )
+    async with server:
+        await server.serve_forever()
 
 if __name__ == "__main__":
     asyncio.run(main()) 
