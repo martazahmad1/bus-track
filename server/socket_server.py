@@ -138,15 +138,15 @@ async def main():
         PORT
     )
     
-    # Create WebSocket server
+    # Create WebSocket server on the same port in production
     ws_server = await websockets.serve(
         websocket_handler,
         HOST,
-        PORT + 1  # Use next port for WebSocket
+        PORT  # Use same port for WebSocket in production
     )
     
     logger.info(f"TCP server started on port {PORT}")
-    logger.info(f"WebSocket server started on port {PORT + 1}")
+    logger.info(f"WebSocket server started on port {PORT}")
     
     await asyncio.gather(
         tcp_server.serve_forever(),

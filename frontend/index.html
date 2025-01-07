@@ -208,8 +208,9 @@
         // Update WebSocket connection
         const wsUrl = window.location.hostname === 'localhost' 
             ? 'ws://localhost:8001'  // Local development
-            : `wss://${window.location.hostname}:${parseInt(window.location.port) + 1}`; // Production
+            : 'wss://bus-track-t9dd.onrender.com'; // Production Render.com URL
 
+        console.log('Connecting to WebSocket:', wsUrl);
         const ws = new WebSocket(wsUrl);
 
         function updateConnectionTime() {
