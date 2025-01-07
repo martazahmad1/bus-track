@@ -18,13 +18,12 @@ websocket_clients = set()
 
 # Socket Server Configuration
 HOST = '0.0.0.0'  # Listen on all available interfaces
-PORT = int(os.getenv('PORT', 10000))   # Main port from Render
-WS_PORT = PORT + 1  # WebSocket port will be main port + 1
+PORT = int(os.getenv('PORT', 10000))   # Use single port from Render
 
 # Store last known position
 last_known_position = None
 
-async def websocket_handler(websocket):
+async def websocket_handler(websocket, path):
     """Handle WebSocket connections from the frontend"""
     try:
         websocket_clients.add(websocket)
@@ -34,8 +33,14 @@ async def websocket_handler(websocket):
         if last_known_position:
             await websocket.send(json.dumps(last_known_position))
         
-        # Keep the connection alive
-        await websocket.wait_closed()
+        # Keep the connection alive and handle incoming messages
+        async for message in websocket:
+            try:
+                data = json.loads(message)
+                logger.info(f"Received WebSocket message: {data}")
+            except json.JSONDecodeError:
+                pass  # Ignore invalid JSON from WebSocket clients
+            
     finally:
         websocket_clients.remove(websocket)
         logger.info(f"WebSocket client disconnected. Remaining clients: {len(websocket_clients)}")
@@ -122,12 +127,15 @@ async def tcp_handler(reader, writer):
         logger.error(f"TCP Connection error from {addr}: {e}")
     finally:
         writer.close()
-        await writer.wait_closed()
+        try:
+            await writer.wait_closed()
+        except Exception as e:
+            logger.error(f"Error closing connection from {addr}: {e}")
         logger.info(f'TCP Connection closed from {addr}')
 
 async def main():
     """Main function to start both servers"""
-    logger.info(f"Starting Bus Tracking Server...")
+    logger.info(f"Starting Bus Tracking Server on port {PORT}...")
     
     # Create TCP server
     tcp_server = await asyncio.start_server(
@@ -137,13 +145,14 @@ async def main():
     )
     logger.info(f"TCP server started on port {PORT}")
     
-    # Create WebSocket server
+    # Create WebSocket server on the same port
     ws_server = await websockets.serve(
         websocket_handler,
         HOST,
-        WS_PORT
+        PORT,
+        process_request=lambda p, r: None  # Allow all paths
     )
-    logger.info(f"WebSocket server started on port {WS_PORT}")
+    logger.info(f"WebSocket server started on port {PORT}")
     
     async with tcp_server, ws_server:
         await asyncio.gather(

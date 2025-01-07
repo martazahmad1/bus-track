@@ -207,8 +207,8 @@
 
         // Update WebSocket connection
         const wsUrl = window.location.hostname === 'localhost' 
-            ? 'ws://localhost:10001'  // Local development (main port + 1)
-            : `wss://bus-track-t9dd.onrender.com:10001`;  // Production with explicit port
+            ? 'ws://localhost:10000'  // Local development
+            : window.location.href.replace('http', 'ws');  // Production: convert current URL to WebSocket
 
         console.log('Connecting to WebSocket:', wsUrl);
         const ws = new WebSocket(wsUrl);
