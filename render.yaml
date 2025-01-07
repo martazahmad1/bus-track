@@ -2,7 +2,10 @@ services:
   - type: web
     name: bus-track
     env: python
-    buildCommand: pip install -r requirements.txt
+    buildCommand: |
+      pip install -r requirements.txt
+      mkdir -p frontend
+      cp frontend/* frontend/
     startCommand: python server/socket_server.py
     envVars:
       - key: PYTHON_VERSION

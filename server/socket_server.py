@@ -6,6 +6,7 @@ import logging
 import os
 from dotenv import load_dotenv
 from http import HTTPStatus
+import pathlib
 
 # Load environment variables
 load_dotenv()
@@ -21,6 +22,9 @@ websocket_clients = set()
 HOST = '0.0.0.0'  # Listen on all available interfaces
 PORT = int(os.getenv('PORT', 10000))   # Use port from Render.com environment
 
+# Get the path to the frontend directory
+FRONTEND_DIR = pathlib.Path(__file__).parent.parent / 'frontend'
+
 # Add SSL/TLS support for secure WebSocket
 ssl_context = None
 if os.getenv('RENDER'):
@@ -33,6 +37,37 @@ if os.getenv('RENDER'):
 
 # Store last known position
 last_known_position = None
+
+def read_frontend_file():
+    """Read the contents of the frontend HTML file"""
+    try:
+        with open(FRONTEND_DIR / 'index.html', 'rb') as f:
+            return f.read()
+    except Exception as e:
+        logger.error(f"Error reading frontend file: {e}")
+        return None
+
+async def handle_http_request(first_line, headers, writer):
+    """Handle HTTP requests and serve frontend files"""
+    if b"GET / HTTP" in first_line or b"GET /index.html HTTP" in first_line:
+        # Serve the frontend HTML file
+        content = read_frontend_file()
+        if content:
+            response = (
+                b"HTTP/1.1 200 OK\r\n"
+                b"Content-Type: text/html\r\n"
+                b"Connection: close\r\n"
+                b"\r\n"
+            )
+            writer.write(response + content)
+        else:
+            # If we can't read the file, send 500 error
+            writer.write(b"HTTP/1.1 500 Internal Server Error\r\n\r\n")
+    else:
+        # For any other path, send 404
+        writer.write(b"HTTP/1.1 404 Not Found\r\n\r\n")
+    
+    await writer.drain()
 
 async def websocket_handler(websocket):
     """Handle WebSocket connections from the frontend"""
@@ -101,20 +136,6 @@ async def handle_connection(reader, writer):
                     break
                 headers.append(line)
             
-            # Check if it's a health check request
-            if b"GET / HTTP" in first_line:
-                # Send a simple 200 OK response
-                response = (
-                    b"HTTP/1.1 200 OK\r\n"
-                    b"Content-Type: text/plain\r\n"
-                    b"Connection: close\r\n"
-                    b"\r\n"
-                    b"Server is running"
-                )
-                writer.write(response)
-                await writer.drain()
-                return
-            
             # Handle WebSocket upgrade request
             if any(b"Upgrade: websocket" in line for line in headers):
                 logger.info("WebSocket connection detected")
@@ -125,9 +146,8 @@ async def handle_connection(reader, writer):
                 ws_protocol.connection_made(writer.transport)
                 await ws_protocol.handler(websocket_handler)
             else:
-                # Regular HTTP request, send 400 Bad Request
-                writer.write(b"HTTP/1.1 400 Bad Request\r\n\r\n")
-                await writer.drain()
+                # Handle regular HTTP request
+                await handle_http_request(first_line, headers, writer)
         else:
             # Handle as TCP connection from Pico
             addr = writer.get_extra_info('peername')
