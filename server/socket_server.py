@@ -160,8 +160,9 @@ async def websocket_handler(websocket):
     
     finally:
         # Clean up when the connection closes
-        websocket_clients.remove(websocket)
-        logger.info(f"WebSocket client {client_info} disconnected. Remaining clients: {len(websocket_clients)}")
+        if websocket in websocket_clients:
+            websocket_clients.remove(websocket)
+            logger.info(f"WebSocket client {client_info} disconnected. Remaining clients: {len(websocket_clients)}")
 
 async def broadcast_to_websockets(data):
     """Broadcast data to all connected WebSocket clients"""
@@ -185,117 +186,80 @@ async def broadcast_to_websockets(data):
         
         # Remove disconnected clients
         for client in disconnected:
-            websocket_clients.remove(client)
+            if client in websocket_clients:
+                websocket_clients.remove(client)
 
-async def handle_connection(reader, writer):
-    """Handle incoming connections and route to appropriate handler"""
+async def handle_tcp_connection(reader, writer):
+    """Handle TCP connections from the Pico tracker"""
+    addr = writer.get_extra_info('peername')
+    logger.info(f'TCP Connection from {addr}')
+    
     try:
-        # Read the first line to determine the request type
-        first_line = await reader.readline()
+        # Send welcome message
+        welcome = json.dumps({"status": "connected", "message": "Welcome to Bus Tracker Server"}) + "\n"
+        writer.write(welcome.encode())
+        await writer.drain()
         
-        # Handle health check requests (empty connections)
-        if not first_line:
-            writer.close()
-            return
+        buffer = ""
+        while True:
+            data = await reader.read(1024)
+            if not data:
+                break
             
-        if b"GET" in first_line:
-            # This looks like an HTTP/WebSocket request
-            logger.info("HTTP/WebSocket request received")
-            headers = []
-            while True:
-                line = await reader.readline()
-                if line == b'\r\n':
-                    break
-                headers.append(line)
-            
-            # Handle WebSocket upgrade request
-            if any(b"Upgrade: websocket" in line for line in headers):
-                logger.info("WebSocket connection detected")
-                ws_server = websockets.WebSocketServer(
-                    host=HOST,
-                    port=PORT,
-                    ping_interval=20,
-                    ping_timeout=30,
-                    close_timeout=10
-                )
-                ws_protocol = websockets.WebSocketServerProtocol(
-                    ws_handler=websocket_handler,
-                    ws_server=ws_server,
-                    max_size=2**20,  # 1MB max message size
-                    max_queue=2**5,  # 32 messages max in queue
-                )
-                ws_protocol.connection_made(writer.transport)
-                try:
-                    await ws_protocol.handler()
-                except Exception as e:
-                    logger.error(f"WebSocket error: {str(e)}")
-            else:
-                # Handle regular HTTP request
-                await handle_http_request(first_line, headers, writer)
-        else:
-            # Handle as TCP connection from Pico
-            addr = writer.get_extra_info('peername')
-            logger.info(f'TCP Connection from {addr}')
-            
-            # Send welcome message
-            welcome = json.dumps({"status": "connected", "message": "Welcome to Bus Tracker Server"}) + "\n"
-            writer.write(welcome.encode())
-            await writer.drain()
-            
-            buffer = ""
-            while True:
-                data = await reader.read(1024)
-                if not data:
-                    break
-                
-                try:
-                    buffer += data.decode('utf-8')
-                    while '\n' in buffer:
-                        line, buffer = buffer.split('\n', 1)
-                        if not line.strip():
-                            continue
-                        
-                        message = json.loads(line)
-                        message['server_time'] = datetime.datetime.now().strftime('%H:%M:%S')
-                        message['source_ip'] = addr[0]
-                        
-                        logger.info(f"Received data from {addr}: {message}")
-                        await broadcast_to_websockets(message)
-                        
-                        writer.write(b'OK\n')
-                        await writer.drain()
-                        
-                except json.JSONDecodeError as e:
-                    if buffer.strip():  # Only log if there's actual content
-                        logger.warning(f"Invalid JSON received from {addr}: {e}")
-                    writer.write(b'ERROR: Invalid JSON\n')
+            try:
+                buffer += data.decode('utf-8')
+                while '\n' in buffer:
+                    line, buffer = buffer.split('\n', 1)
+                    if not line.strip():
+                        continue
+                    
+                    message = json.loads(line)
+                    message['server_time'] = datetime.datetime.now().strftime('%H:%M:%S')
+                    message['source_ip'] = addr[0]
+                    
+                    logger.info(f"Received data from {addr}: {message}")
+                    await broadcast_to_websockets(message)
+                    
+                    writer.write(b'OK\n')
                     await writer.drain()
                     
+            except json.JSONDecodeError as e:
+                if buffer.strip():  # Only log if there's actual content
+                    logger.warning(f"Invalid JSON received from {addr}: {e}")
+                writer.write(b'ERROR: Invalid JSON\n')
+                await writer.drain()
+                
     except Exception as e:
         if not str(e).startswith('[Errno 104]'):  # Don't log normal connection resets
-            logger.error(f"Connection error: {e}")
+            logger.error(f"TCP connection error: {e}")
     finally:
         writer.close()
         try:
             await writer.wait_closed()
         except Exception as e:
-            if not str(e).startswith('[Errno 104]'):  # Don't log normal connection resets
-                logger.error(f"Error closing connection: {e}")
+            if not str(e).startswith('[Errno 104]'):
+                logger.error(f"Error closing TCP connection: {e}")
 
 async def main():
     """Main function to start the server"""
     logger.info(f"Starting Bus Tracking Server on port {PORT}...")
     
-    server = await asyncio.start_server(
-        handle_connection,
-        HOST,
-        PORT
-    )
-    
-    logger.info(f"Server started on port {PORT}")
-    
-    async with server:
-        await server.serve_forever()
+    # Start WebSocket server
+    async with websockets.serve(websocket_handler, HOST, PORT) as websocket_server:
+        # Start TCP server
+        tcp_server = await asyncio.start_server(
+            handle_tcp_connection,
+            HOST,
+            PORT
+        )
+        
+        logger.info(f"Server started on port {PORT}")
+        
+        async with tcp_server:
+            await asyncio.gather(
+                tcp_server.serve_forever(),
+                websocket_server.serve_forever()
+            )
 
 if __name__ == "__main__":
     asyncio.run(main()) 
