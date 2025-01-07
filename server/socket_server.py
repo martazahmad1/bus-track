@@ -28,8 +28,9 @@ except (ValueError, TypeError):
     logger.warning("Invalid PORT environment variable, using default port 10000")
     PORT = 10000
 
-# Get the path to the frontend directory
-FRONTEND_DIR = pathlib.Path(__file__).parent.parent / 'frontend'
+# Get the path to the frontend directory and file
+FRONTEND_DIR = pathlib.Path(__file__).parent.parent
+FRONTEND_FILE = FRONTEND_DIR / 'index.html'
 
 # Store last known position
 last_known_position = None
@@ -37,8 +38,17 @@ last_known_position = None
 def read_frontend_file():
     """Read the contents of the frontend HTML file"""
     try:
-        with open(FRONTEND_DIR / 'index.html', 'rb') as f:
-            return f.read()
+        # Try current directory first
+        if os.path.exists('index.html'):
+            with open('index.html', 'rb') as f:
+                return f.read()
+        # Try frontend directory as fallback
+        elif os.path.exists(FRONTEND_FILE):
+            with open(FRONTEND_FILE, 'rb') as f:
+                return f.read()
+        else:
+            logger.error(f"Frontend file not found in current dir or at {FRONTEND_FILE}")
+            return None
     except Exception as e:
         logger.error(f"Error reading frontend file: {e}")
         return None
@@ -56,12 +66,15 @@ async def handle_http_request(first_line, headers, writer):
                 b"\r\n"
             )
             writer.write(response + content)
+            logger.info("Successfully served frontend file")
         else:
             # If we can't read the file, send 500 error
             writer.write(b"HTTP/1.1 500 Internal Server Error\r\n\r\n")
+            logger.error("Failed to serve frontend file")
     else:
         # For any other path, send 404
         writer.write(b"HTTP/1.1 404 Not Found\r\n\r\n")
+        logger.info(f"404 for path: {first_line}")
     
     await writer.drain()
 

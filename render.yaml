@@ -4,8 +4,7 @@ services:
     env: python
     buildCommand: |
       pip install -r requirements.txt
-      mkdir -p frontend
-      cp frontend/* frontend/
+      cp -r frontend/* .
     startCommand: python server/socket_server.py
     envVars:
       - key: PYTHON_VERSION
