@@ -20,20 +20,16 @@ websocket_clients = set()
 
 # Socket Server Configuration
 HOST = '0.0.0.0'  # Listen on all available interfaces
-PORT = int(os.getenv('PORT', 10000))   # Use port from Render.com environment
+
+# Handle PORT environment variable with better error handling
+try:
+    PORT = int(os.getenv('PORT', '10000'))
+except (ValueError, TypeError):
+    logger.warning("Invalid PORT environment variable, using default port 10000")
+    PORT = 10000
 
 # Get the path to the frontend directory
 FRONTEND_DIR = pathlib.Path(__file__).parent.parent / 'frontend'
-
-# Add SSL/TLS support for secure WebSocket
-ssl_context = None
-if os.getenv('RENDER'):
-    import ssl
-    ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    cert_path = os.getenv('SSL_CERT_PATH')
-    key_path = os.getenv('SSL_KEY_PATH')
-    if cert_path and key_path:
-        ssl_context.load_cert_chain(cert_path, key_path)
 
 # Store last known position
 last_known_position = None
@@ -205,8 +201,7 @@ async def main():
     server = await asyncio.start_server(
         handle_connection,
         HOST,
-        PORT,
-        ssl=ssl_context
+        PORT
     )
     
     logger.info(f"Server started on port {PORT}")

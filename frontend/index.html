@@ -206,9 +206,10 @@
         const maxHistoryItems = 50;
 
         // Update WebSocket connection
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = window.location.hostname === 'localhost' 
-            ? 'ws://localhost:10000'  // Local development
-            : 'wss://bus-track-t9dd.onrender.com';  // Production Render.com URL
+            ? `ws://localhost:10000`
+            : `${wsProtocol}//${window.location.host}`;
 
         console.log('Connecting to WebSocket:', wsUrl);
         const ws = new WebSocket(wsUrl);

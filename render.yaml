@@ -12,8 +12,4 @@ services:
         value: 3.9.0
       - key: RENDER
         value: "true"
-      - key: SSL_CERT_PATH
-        sync: false  # This will be set in Render.com dashboard
-      - key: SSL_KEY_PATH
-        sync: false  # This will be set in Render.com dashboard
     plan: free 
