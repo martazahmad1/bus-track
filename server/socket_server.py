@@ -101,47 +101,21 @@ async def broadcast_to_websockets(data):
             if client in websocket_clients:
                 websocket_clients.remove(client)
 
-async def handle_http_request(path, request_headers):
-    """Handle HTTP requests"""
+async def process_request(path, request_headers):
+    """Process HTTP requests before WebSocket upgrade"""
     if path == "/" or path == "/index.html":
         content = read_frontend_file()
         if content:
-            return {
-                "status": HTTPStatus.OK,
-                "headers": {
-                    "Content-Type": "text/html",
-                    "Content-Length": str(len(content))
-                },
-                "body": content
-            }
-    return {
-        "status": HTTPStatus.NOT_FOUND,
-        "headers": {"Content-Type": "text/plain"},
-        "body": b"404 Not Found"
-    }
+            return HTTPStatus.OK, [
+                ("Content-Type", "text/html"),
+                ("Content-Length", str(len(content)))
+            ], content
+    return None  # Let WebSocket handle the connection
 
-async def handle_connection(websocket, path):
-    """Handle both HTTP and WebSocket connections"""
+async def handle_websocket(websocket, path):
+    """Handle WebSocket connections"""
     try:
-        # Get request headers
-        headers = websocket.request_headers
-        
-        # Check if this is an HTTP request
-        if not headers.get('Upgrade', '').lower() == 'websocket':
-            # Handle HTTP request
-            response = await handle_http_request(path, headers)
-            response_headers = [
-                (name, value)
-                for name, value in response["headers"].items()
-            ]
-            await websocket.send_response(
-                status=response["status"],
-                headers=response_headers,
-                body=response["body"]
-            )
-            return
-
-        # Handle WebSocket connection
+        # Add to clients set
         websocket_clients.add(websocket)
         client_info = websocket.remote_address
         logger.info(f"New WebSocket client connected from {client_info}")
@@ -170,10 +144,12 @@ async def main():
     
     # Create server with both HTTP and WebSocket support
     async with websockets.serve(
-        handle_connection,
+        handle_websocket,
         HOST,
         PORT,
-        process_request=handle_http_request
+        process_request=process_request,
+        ping_interval=20,
+        ping_timeout=30
     ) as server:
         logger.info(f"Server started on port {PORT}")
         await server.wait_closed()
