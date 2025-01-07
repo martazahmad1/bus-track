@@ -42,7 +42,8 @@ POSSIBLE_PATHS = [
     'index.html',  # Current directory
     os.path.join(PROJECT_ROOT, 'index.html'),  # Project root
     os.path.join(PROJECT_ROOT, 'frontend', 'index.html'),  # Frontend directory
-    '/opt/render/project/src/index.html'  # Render.com specific path
+    '/opt/render/project/src/index.html',  # Render.com specific path
+    '/opt/render/project/src/frontend/index.html'  # Render.com frontend path
 ]
 
 logger.info(f"Current directory: {CURRENT_DIR}")
@@ -75,95 +76,6 @@ def read_frontend_file():
         logger.error(f"Error reading frontend file: {str(e)}")
         return None
 
-async def handle_http_request(first_line, headers, writer):
-    """Handle HTTP requests and serve frontend files"""
-    try:
-        logger.info(f"Handling HTTP request: {first_line}")
-        if b"GET / HTTP" in first_line or b"GET /index.html HTTP" in first_line:
-            # Serve the frontend HTML file
-            content = read_frontend_file()
-            if content:
-                response = (
-                    b"HTTP/1.1 200 OK\r\n"
-                    b"Content-Type: text/html\r\n"
-                    b"Connection: close\r\n"
-                    b"\r\n"
-                )
-                writer.write(response + content)
-                logger.info("Successfully served frontend file")
-            else:
-                # If we can't read the file, send 500 error with message
-                error_message = b"Failed to load frontend file. Please check server logs."
-                writer.write(
-                    b"HTTP/1.1 500 Internal Server Error\r\n"
-                    b"Content-Type: text/plain\r\n"
-                    b"Content-Length: " + str(len(error_message)).encode() + b"\r\n"
-                    b"\r\n" + error_message
-                )
-                logger.error("Failed to serve frontend file")
-        else:
-            # For any other path, send 404 with message
-            error_message = b"Page not found"
-            writer.write(
-                b"HTTP/1.1 404 Not Found\r\n"
-                b"Content-Type: text/plain\r\n"
-                b"Content-Length: " + str(len(error_message)).encode() + b"\r\n"
-                b"\r\n" + error_message
-            )
-            logger.info(f"404 for path: {first_line}")
-    except Exception as e:
-        logger.error(f"Error handling HTTP request: {str(e)}")
-        writer.write(b"HTTP/1.1 500 Internal Server Error\r\n\r\n")
-    
-    await writer.drain()
-
-async def websocket_handler(websocket):
-    """Handle WebSocket connections from the frontend"""
-    try:
-        # Add the new client to our set
-        websocket_clients.add(websocket)
-        client_info = websocket.remote_address
-        logger.info(f"New WebSocket client connected from {client_info}. Total clients: {len(websocket_clients)}")
-        
-        # Send initial state
-        if last_known_position:
-            try:
-                await websocket.send(json.dumps(last_known_position))
-                logger.info(f"Sent last known position to new client: {last_known_position}")
-            except Exception as e:
-                logger.error(f"Error sending initial state: {str(e)}")
-        
-        # Keep connection alive and handle messages
-        async for message in websocket:
-            try:
-                # Try to parse the message as JSON
-                data = json.loads(message)
-                logger.info(f"Received WebSocket message from {client_info}: {data}")
-                
-                # Handle different message types
-                if isinstance(data, dict):
-                    message_type = data.get('type')
-                    if message_type == 'ping':
-                        await websocket.send(json.dumps({'type': 'pong'}))
-                    else:
-                        # Broadcast message to all other clients
-                        await broadcast_to_websockets(data)
-                
-            except json.JSONDecodeError:
-                logger.warning(f"Received invalid JSON from WebSocket client {client_info}")
-            except Exception as e:
-                logger.error(f"Error handling WebSocket message: {str(e)}")
-                break
-    
-    except Exception as e:
-        logger.error(f"WebSocket connection error: {str(e)}")
-    
-    finally:
-        # Clean up when the connection closes
-        if websocket in websocket_clients:
-            websocket_clients.remove(websocket)
-            logger.info(f"WebSocket client {client_info} disconnected. Remaining clients: {len(websocket_clients)}")
-
 async def broadcast_to_websockets(data):
     """Broadcast data to all connected WebSocket clients"""
     global last_known_position
@@ -189,77 +101,67 @@ async def broadcast_to_websockets(data):
             if client in websocket_clients:
                 websocket_clients.remove(client)
 
-async def handle_tcp_connection(reader, writer):
-    """Handle TCP connections from the Pico tracker"""
-    addr = writer.get_extra_info('peername')
-    logger.info(f'TCP Connection from {addr}')
-    
+async def handle_websocket(websocket, path):
+    """Handle WebSocket connections"""
     try:
-        # Send welcome message
-        welcome = json.dumps({"status": "connected", "message": "Welcome to Bus Tracker Server"}) + "\n"
-        writer.write(welcome.encode())
-        await writer.drain()
-        
-        buffer = ""
-        while True:
-            data = await reader.read(1024)
-            if not data:
-                break
+        # Check if this is a frontend client (has proper WebSocket headers)
+        if websocket.request_headers.get('Upgrade', '').lower() == 'websocket':
+            # Handle frontend WebSocket client
+            websocket_clients.add(websocket)
+            client_info = websocket.remote_address
+            logger.info(f"New WebSocket client connected from {client_info}")
             
             try:
-                buffer += data.decode('utf-8')
-                while '\n' in buffer:
-                    line, buffer = buffer.split('\n', 1)
-                    if not line.strip():
-                        continue
-                    
-                    message = json.loads(line)
-                    message['server_time'] = datetime.datetime.now().strftime('%H:%M:%S')
-                    message['source_ip'] = addr[0]
-                    
-                    logger.info(f"Received data from {addr}: {message}")
-                    await broadcast_to_websockets(message)
-                    
-                    writer.write(b'OK\n')
-                    await writer.drain()
-                    
-            except json.JSONDecodeError as e:
-                if buffer.strip():  # Only log if there's actual content
-                    logger.warning(f"Invalid JSON received from {addr}: {e}")
-                writer.write(b'ERROR: Invalid JSON\n')
-                await writer.drain()
-                
+                async for message in websocket:
+                    try:
+                        data = json.loads(message)
+                        logger.info(f"Received WebSocket message: {data}")
+                        await broadcast_to_websockets(data)
+                    except json.JSONDecodeError:
+                        logger.warning(f"Invalid JSON from WebSocket client")
+            except Exception as e:
+                logger.error(f"WebSocket error: {str(e)}")
+            finally:
+                if websocket in websocket_clients:
+                    websocket_clients.remove(websocket)
+                logger.info(f"WebSocket client disconnected")
+        else:
+            # Handle Pico TCP client
+            client_info = websocket.remote_address
+            logger.info(f"New TCP client connected from {client_info}")
+            
+            # Send welcome message
+            welcome = json.dumps({"status": "connected", "message": "Welcome to Bus Tracker Server"}) + "\n"
+            await websocket.send(welcome)
+            
+            try:
+                async for message in websocket:
+                    try:
+                        data = json.loads(message)
+                        data['server_time'] = datetime.datetime.now().strftime('%H:%M:%S')
+                        data['source_ip'] = client_info[0]
+                        logger.info(f"Received TCP message: {data}")
+                        await broadcast_to_websockets(data)
+                        await websocket.send('OK\n')
+                    except json.JSONDecodeError:
+                        logger.warning(f"Invalid JSON from TCP client")
+                        await websocket.send('ERROR: Invalid JSON\n')
+            except Exception as e:
+                if not str(e).startswith('[Errno 104]'):
+                    logger.error(f"TCP error: {str(e)}")
+            finally:
+                logger.info(f"TCP client disconnected")
     except Exception as e:
-        if not str(e).startswith('[Errno 104]'):  # Don't log normal connection resets
-            logger.error(f"TCP connection error: {e}")
-    finally:
-        writer.close()
-        try:
-            await writer.wait_closed()
-        except Exception as e:
-            if not str(e).startswith('[Errno 104]'):
-                logger.error(f"Error closing TCP connection: {e}")
+        logger.error(f"Connection error: {str(e)}")
 
 async def main():
     """Main function to start the server"""
     logger.info(f"Starting Bus Tracking Server on port {PORT}...")
     
-    # Start WebSocket server
-    async with websockets.serve(websocket_handler, HOST, PORT) as websocket_server:
-        # Start TCP server
-        tcp_server = await asyncio.start_server(
-            handle_tcp_connection,
-            HOST,
-            PORT
-        )
-        
+    # Create WebSocket server
+    async with websockets.serve(handle_websocket, HOST, PORT) as server:
         logger.info(f"Server started on port {PORT}")
-        
-        async with tcp_server:
-            await asyncio.gather(
-                tcp_server.serve_forever(),
-                websocket_server.serve_forever()
-            )
+        await server.wait_closed()
 
 if __name__ == "__main__":
     asyncio.run(main()) 
