@@ -5,6 +5,7 @@ import logging
 import os
 from http import HTTPStatus
 from pathlib import Path
+import aiohttp
 
 # Configure logging
 logging.basicConfig(
@@ -24,6 +25,21 @@ except (ValueError, TypeError):
 # Global variables
 websocket_clients = set()
 last_known_position = None
+
+# Keep-alive settings
+KEEP_ALIVE_INTERVAL = 10  # seconds
+RENDER_URL = "https://bus-track-otfv.onrender.com"
+
+async def keep_alive():
+    """Periodically ping the server to keep it alive"""
+    async with aiohttp.ClientSession() as session:
+        while True:
+            try:
+                async with session.get(RENDER_URL) as response:
+                    logger.debug(f"Keep-alive ping sent, status: {response.status}")
+            except Exception as e:
+                logger.error(f"Keep-alive ping failed: {str(e)}")
+            await asyncio.sleep(KEEP_ALIVE_INTERVAL)
 
 def read_frontend_file():
     """Read the frontend HTML file"""
@@ -147,11 +163,15 @@ async def main():
     
     logger.info(f"Server started on port {PORT}")
     
+    # Start keep-alive task
+    keep_alive_task = asyncio.create_task(keep_alive())
+    
     try:
         await server.wait_closed()
     except Exception as e:
         logger.error(f"Server error: {str(e)}")
     finally:
+        keep_alive_task.cancel()
         logger.info("Server shutting down...")
 
 if __name__ == "__main__":
