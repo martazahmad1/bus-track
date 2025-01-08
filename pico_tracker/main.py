@@ -345,6 +345,62 @@ except Exception as e:
     oled_initialized = False
     module_status["oled"]["status"] = "Error"
 
+def send_gps_data(gps_data):
+    """Send GPS data via HTTP POST"""
+    try:
+        # Prepare the data as JSON string
+        json_data = json.dumps(gps_data)
+        data_length = len(json_data)
+        
+        # Configure HTTP POST request
+        send_at_command('AT+HTTPINIT')
+        send_at_command('AT+HTTPPARA="CID",1')
+        send_at_command(f'AT+HTTPPARA="URL","http://13.60.79.143/gps"')
+        send_at_command('AT+HTTPPARA="CONTENT","application/json"')
+        send_at_command(f'AT+HTTPDATA={data_length},10000')
+        
+        # Send the actual data
+        response = send_at_command(json_data)
+        if "DOWNLOAD" in response:
+            # Start the HTTP POST request
+            response = send_at_command('AT+HTTPACTION=1')  # 1 for POST
+            
+            # Wait for response
+            time.sleep(5)
+            response = wait_response()
+            
+            if "+HTTPACTION: 1,200" in response:
+                module_status["server"]["status"] = "Connected"
+                module_status["server"]["last_send"] = time.time()
+                return True
+                
+        # Terminate HTTP service
+        send_at_command('AT+HTTPTERM')
+        return False
+        
+    except Exception as e:
+        module_status["server"]["status"] = f"Error: {str(e)}"
+        return False
+
+def format_gps_data():
+    """Format GPS data for sending"""
+    return {
+        "type": "gps",
+        "data": {
+            "latitude": gps.latitude[0] if gps.latitude else 0,
+            "longitude": gps.longitude[0] if gps.longitude else 0,
+            "altitude": gps.altitude if gps.altitude else 0,
+            "speed": gps.speed[2] if gps.speed else 0,  # Speed in km/h
+            "satellites": gps.satellites_in_use,
+            "timestamp": time.time(),
+            "fix": gps.fix_stat
+        },
+        "status": {
+            "gps": module_status["gps"],
+            "gsm": module_status["gsm"]
+        }
+    }
+
 def main():
     print("\n=== Starting Bus Tracker ===")
     
@@ -371,91 +427,21 @@ def main():
     first_data_sent = False
     
     while True:
-        gps_data = None
-        gps_status_msg = "Wait..."
-        
-        # Get GPS Data
-        if gps_initialized:
-            start_time = time.time()
-            while time.time() - start_time < 1.0:
-                if gps_uart.any():
-                    char = gps_uart.read(1)
-                    if char is None:
-                        continue
-                    try:
-                        stat = gps.update(str(char, 'ascii'))
-                        if stat:
-                            module_status["gps"].update({
-                                "fix": gps.fix_stat,
-                                "satellites": gps.satellites_in_use,
-                                "hdop": gps.hdop,
-                                "altitude": gps.altitude,
-                                "speed_kmh": gps.speed[2],
-                                "course": gps.course,
-                            })
-                            
-                            if gps.fix_stat:
-                                lat = gps.latitude[0] + (gps.latitude[1] / 60)
-                                if gps.latitude[2] == 'S':
-                                    lat = -lat
-                                
-                                lon = gps.longitude[0] + (gps.longitude[1] / 60)
-                                if gps.longitude[2] == 'W':
-                                    lon = -lon
-                                
-                                timestamp = f"{gps.timestamp[0]:02d}:{gps.timestamp[1]:02d}:{int(gps.timestamp[2]):02d}"
-                                module_status["gps"]["status"] = "Fix OK"
-                                module_status["gps"]["last_fix"] = time.time()
-                                
-                                gps_data = {
-                                    "type": "gps",
-                                    "latitude": lat,
-                                    "longitude": lon,
-                                    "timestamp": timestamp,
-                                    "status": module_status
-                                }
-                    except Exception as e:
-                        print(f"GPS Parse Error: {str(e)}")
-        
-        # Update display with current status
-        if gps_data:
-            if not first_data_sent:
-                update_display(
-                    "First Fix OK",
-                    "Sending Vertices...",
-                    f"Sats:{module_status['gps']['satellites']}",
-                    f"GSM:{module_status['gsm']['status']}"
-                )
-                
-                # Try to send first data
-                if send_data(gps_data):
-                    first_data_sent = True
-                    update_display(
-                        "System Ready",
-                        f"GPS:{module_status['gps']['status']}",
-                        f"GSM:{module_status['gsm']['status']}",
-                        f"Srv:{module_status['server']['status']}"
-                    )
+        try:
+            if gps.fix_stat:  # If we have GPS fix
+                gps_data = format_gps_data()
+                if send_gps_data(gps_data):
+                    update_display("Data Sent", f"Lat: {gps_data['data']['latitude']:.6f}")
+                else:
+                    update_display("Send Failed", "Retrying...")
             else:
-                # Regular update display
-                update_display(
-                    f"GPS:{module_status['gps']['status']}",
-                    f"Sats:{module_status['gps']['satellites']}",
-                    f"GSM:{module_status['gsm']['status']}",
-                    f"Srv:{module_status['server']['status']}"
-                )
-                
-                # Send data in real-time
-                send_data(gps_data)
-        else:
-            update_display(
-                f"GPS:{module_status['gps']['status']}",
-                f"GSM:{module_status['gsm']['status']}",
-                f"Srv:{module_status['server']['status']}",
-                "Wait GPS fix..."
-            )
-        
-        time.sleep(0.1)
+                update_display("No GPS Fix", f"Sats: {gps.satellites_in_use}")
+            
+            time.sleep(10)  # Send every 10 seconds
+            
+        except Exception as e:
+            print(f"Main loop error: {str(e)}")
+            time.sleep(5)
 
 if __name__ == "__main__":
     main() 
