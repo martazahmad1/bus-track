@@ -73,7 +73,7 @@ def init_gsm():
     time.sleep(2)  # Give module time to stabilize
     
     # Test AT command multiple times
-    for _ in range(3):
+    for _ in range(10):
         update_display("GSM Init", "Testing AT...")
         response = send_at_command("AT")
         if "OK" in response:
@@ -81,6 +81,7 @@ def init_gsm():
         time.sleep(1)
     else:
         update_display("GSM Error", "AT Failed", "Check wiring")
+        time.sleep(2)
         return False
     
     # Check SIM status
@@ -88,6 +89,7 @@ def init_gsm():
     response = send_at_command("AT+CPIN?")
     if "READY" not in response:
         update_display("GSM Error", "SIM not ready", "Check SIM card")
+        time.sleep(2)
         return False
     
     # Check signal quality
@@ -115,7 +117,7 @@ def init_gsm():
             break
         attempts += 1
         update_display("GSM Init", f"Network try {attempts}")
-        time.sleep(1)
+        time.sleep(0.5)
     else:
         update_display("GSM Error", "Network timeout", "Check coverage")
         return False
@@ -265,10 +267,10 @@ def main():
     time.sleep(1)
     
     # Step 1: Initialize GSM and connect to internet
-    if not init_gsm():
+    while not init_gsm():
         update_display("GSM Error", "Check SIM", "card & signal")
-        return
-    
+        time.sleep(2)
+
     # Step 2: Connect to server
     while not module_status["server"]["connected"]:
         if connect_server():
@@ -368,4 +370,3 @@ def main():
 
 if __name__ == "__main__":
     main() 
-

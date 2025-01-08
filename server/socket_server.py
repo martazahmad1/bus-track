@@ -1,114 +1,55 @@
 import asyncio
 import websockets
 import json
-import datetime
 import logging
 import os
-from dotenv import load_dotenv
 from http import HTTPStatus
-import pathlib
+from pathlib import Path
 
-# Load environment variables
-load_dotenv()
-
-# Configure logging with more detail
+# Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler()
-    ]
+    format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Global variables for state management
-last_known_position = None
-websocket_clients = set()
-
-# Socket Server Configuration
-HOST = '0.0.0.0'  # Listen on all available interfaces
-
-# Handle PORT environment variable with better error handling
+# Server settings
+HOST = '0.0.0.0'
 try:
     PORT = int(os.getenv('PORT', '10000'))
 except (ValueError, TypeError):
     logger.warning("Invalid PORT environment variable, using default port 10000")
     PORT = 10000
 
-# Get the path to the frontend directory and file
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(CURRENT_DIR)
-POSSIBLE_PATHS = [
-    'index.html',  # Current directory
-    os.path.join(PROJECT_ROOT, 'index.html'),  # Project root
-    os.path.join(PROJECT_ROOT, 'frontend', 'index.html'),  # Frontend directory
-    '/opt/render/project/src/index.html',  # Render.com specific path
-    '/opt/render/project/src/frontend/index.html'  # Render.com frontend path
-]
-
-logger.info(f"Current directory: {CURRENT_DIR}")
-logger.info(f"Project root: {PROJECT_ROOT}")
-logger.info(f"Looking for frontend file in multiple locations:")
-for path in POSSIBLE_PATHS:
-    logger.info(f"- {path}")
+# Global variables
+websocket_clients = set()
+last_known_position = None
 
 def read_frontend_file():
-    """Read the contents of the frontend HTML file"""
+    """Read the frontend HTML file"""
     try:
-        # Try all possible paths
-        for path in POSSIBLE_PATHS:
-            if os.path.exists(path):
-                logger.info(f"Found index.html at: {path}")
-                with open(path, 'rb') as f:
-                    return f.read()
+        frontend_path = Path(__file__).parent.parent / 'frontend' / 'index.html'
+        if not frontend_path.exists():
+            # Try current directory
+            frontend_path = Path('index.html')
         
-        # If no file found, log all directory contents
-        logger.error("Frontend file not found in any location")
-        logger.error("Current directory contents:")
-        logger.error(os.listdir('.'))
-        logger.error(f"Project root contents:")
-        logger.error(os.listdir(PROJECT_ROOT))
-        if os.path.exists('/opt/render/project/src'):
-            logger.error("Render project directory contents:")
-            logger.error(os.listdir('/opt/render/project/src'))
-        return None
+        if frontend_path.exists():
+            with open(frontend_path, 'rb') as f:
+                return f.read()
+        else:
+            logger.error(f"Frontend file not found at {frontend_path}")
+            return None
     except Exception as e:
         logger.error(f"Error reading frontend file: {str(e)}")
         return None
 
-async def broadcast_to_websockets(data):
-    """Broadcast data to all connected WebSocket clients"""
-    global last_known_position
-    
-    if isinstance(data, dict) and data.get('type') == 'gps':
-        last_known_position = data
-    
-    if websocket_clients:
-        # Convert data to JSON if it's not already a string
-        message = data if isinstance(data, str) else json.dumps(data)
-        
-        # Send to all connected clients
-        disconnected = set()
-        for client in websocket_clients:
-            try:
-                await client.send(message)
-            except Exception as e:
-                logger.error(f"Error sending to WebSocket client: {e}")
-                disconnected.add(client)
-        
-        # Remove disconnected clients
-        for client in disconnected:
-            if client in websocket_clients:
-                websocket_clients.remove(client)
-
 async def process_request(path, request_headers):
     """Process HTTP requests before WebSocket upgrade"""
     logger.info(f"Processing request: {path}")
-    logger.info(f"Headers: {request_headers}")
     
     # Handle WebSocket upgrade
     if request_headers.get('Upgrade', '').lower() == 'websocket':
-        return None  # Let WebSocket handle the connection
+        return None
     
     # Handle HTTP requests
     if path == "/" or path == "/index.html":
@@ -116,19 +57,14 @@ async def process_request(path, request_headers):
         if content:
             return HTTPStatus.OK, [
                 ("Content-Type", "text/html"),
-                ("Content-Length", str(len(content))),
-                ("Connection", "keep-alive"),
-                ("Access-Control-Allow-Origin", "*"),
-                ("Access-Control-Allow-Headers", "*"),
-                ("Access-Control-Allow-Methods", "GET, POST, OPTIONS"),
-                ("Sec-WebSocket-Version", "13"),
-                ("Sec-WebSocket-Protocol", "bus-tracker"),
+                ("Content-Length", str(len(content)))
             ], content
     
     # Return 404 for other paths
     return HTTPStatus.NOT_FOUND, [], b"404 Not Found"
 
 async def broadcast_message(message):
+    """Broadcast message to all connected WebSocket clients"""
     disconnected_clients = []
     for client in websocket_clients:
         try:
@@ -142,9 +78,47 @@ async def broadcast_message(message):
             websocket_clients.remove(client)
             logger.info("Removed disconnected client")
 
+async def handle_tcp_connection(reader, writer):
+    """Handle TCP connections from the Pico tracker"""
+    try:
+        while True:
+            data = await reader.read(1024)
+            if not data:
+                break
+            
+            try:
+                message = data.decode()
+                logger.info(f"Received TCP message: {message}")
+                
+                # Try to parse as JSON and broadcast to WebSocket clients
+                json_data = json.loads(message)
+                if json_data.get("type") == "gps":
+                    global last_known_position
+                    last_known_position = json_data
+                    await broadcast_message(message)
+                
+            except json.JSONDecodeError:
+                logger.warning("Received invalid JSON data")
+            except Exception as e:
+                logger.error(f"Error processing TCP message: {str(e)}")
+    except Exception as e:
+        logger.error(f"TCP connection error: {str(e)}")
+    finally:
+        writer.close()
+        await writer.wait_closed()
+
 async def handle_websocket(websocket, path):
+    """Handle WebSocket connections from web clients"""
     logger.info("New WebSocket client connected")
     websocket_clients.add(websocket)
+    
+    # Send initial state if available
+    if last_known_position:
+        try:
+            await websocket.send(json.dumps(last_known_position))
+        except Exception as e:
+            logger.error(f"Error sending initial state: {str(e)}")
+    
     try:
         async for message in websocket:
             logger.debug(f"Received WebSocket message: {message}")
@@ -159,19 +133,15 @@ async def main():
     """Main function to start the server"""
     logger.info(f"Starting Bus Tracking Server on port {PORT}...")
     
-    # Create server with both HTTP and WebSocket support
+    # Start WebSocket server for both web clients and Pico tracker
     server = await websockets.serve(
         handle_websocket,
         HOST,
         PORT,
         process_request=process_request,
-        ping_interval=20,
-        ping_timeout=30,
+        ping_interval=None,  # Disable ping to allow TCP connections
         compression=None,
         max_size=10_485_760,  # 10MB max message size
-        max_queue=32,
-        close_timeout=10,
-        create_protocol=websockets.WebSocketServerProtocol,
         subprotocols=['bus-tracker']
     )
     
