@@ -35,7 +35,7 @@ module_status = {
 }
 
 # Server configuration
-SERVER_IP = "bus-track-otfv.onrender.com"  # Using default Render.com URL
+SERVER_IP = "Martaz.pythonanywhere.com"  # Using PythonAnywhere domain
 SERVER_PORT = "80"  # Using standard HTTP port
 
 def send_at_command(command, timeout=1000):
