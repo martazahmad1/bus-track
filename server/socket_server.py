@@ -6,6 +6,7 @@ import os
 from http import HTTPStatus
 from pathlib import Path
 import aiohttp
+import time
 
 # Configure logging
 logging.basicConfig(
@@ -29,6 +30,15 @@ last_known_position = None
 # Keep-alive settings
 KEEP_ALIVE_INTERVAL = 10  # seconds
 RENDER_URL = "https://bus-track-otfv.onrender.com"
+
+async def send_heartbeat(websocket):
+    """Send periodic heartbeat to keep connection alive"""
+    while True:
+        try:
+            await websocket.send(json.dumps({"type": "heartbeat", "timestamp": time.time()}))
+            await asyncio.sleep(15)  # Send heartbeat every 15 seconds
+        except:
+            break
 
 async def keep_alive():
     """Periodically ping the server to keep it alive"""
@@ -128,6 +138,9 @@ async def handle_websocket(websocket, path):
     logger.info("New WebSocket client connected")
     websocket_clients.add(websocket)
     
+    # Start heartbeat task for this connection
+    heartbeat_task = asyncio.create_task(send_heartbeat(websocket))
+    
     # Send initial state if available
     if last_known_position:
         try:
@@ -143,6 +156,7 @@ async def handle_websocket(websocket, path):
     except websockets.exceptions.ConnectionClosed:
         logger.info("WebSocket client disconnected")
     finally:
+        heartbeat_task.cancel()  # Cancel heartbeat when connection closes
         websocket_clients.remove(websocket)
 
 async def main():
