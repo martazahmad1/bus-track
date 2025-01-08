@@ -911,6 +911,67 @@
             iconAnchor: [12, 12],
             popupAnchor: [0, -12]
         });
+
+        let ws;
+        let reconnectAttempt = 0;
+        const MAX_RECONNECT_DELAY = 30000; // Maximum delay between reconnection attempts (30 seconds)
+
+        function connectWebSocket() {
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${wsProtocol}//${window.location.host}`;
+            
+            ws = new WebSocket(wsUrl);
+            
+            ws.onopen = function() {
+                console.log('WebSocket connected');
+                reconnectAttempt = 0;
+                updateSystemStatus('connected');
+            };
+            
+            ws.onclose = function() {
+                console.log('WebSocket disconnected');
+                updateSystemStatus('disconnected');
+                
+                // Calculate reconnection delay with exponential backoff
+                const delay = Math.min(1000 * Math.pow(2, reconnectAttempt), MAX_RECONNECT_DELAY);
+                reconnectAttempt++;
+                
+                setTimeout(connectWebSocket, delay);
+            };
+            
+            ws.onerror = function(error) {
+                console.error('WebSocket error:', error);
+                updateSystemStatus('error');
+            };
+            
+            ws.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                if (data.type === 'heartbeat') {
+                    updateSystemStatus('connected');
+                    return;
+                }
+                // Handle other message types...
+                handleWebSocketMessage(data);
+            };
+        }
+
+        function updateSystemStatus(status) {
+            const statusElement = document.querySelector('.system-status');
+            if (statusElement) {
+                statusElement.className = `system-status status-${status}`;
+                statusElement.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+            }
+            
+            // Update backend status in the System Status box
+            const backendStatus = document.getElementById('backend-status');
+            if (backendStatus) {
+                backendStatus.textContent = status === 'connected' ? 'Connected' : 'Disconnected';
+                backendStatus.className = status === 'connected' ? 'status-ok' : 'status-error';
+            }
+        }
+
+        // Initial connection
+        connectWebSocket();
     </script>
 </body>
 </html> 

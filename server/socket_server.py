@@ -3,6 +3,7 @@ import websockets
 import json
 import logging
 import os
+import time
 from http import HTTPStatus
 from pathlib import Path
 import aiohttp
@@ -29,6 +30,15 @@ last_known_position = None
 # Keep-alive settings
 KEEP_ALIVE_INTERVAL = 10  # seconds
 RENDER_URL = "https://bus-track-otfv.onrender.com"
+
+async def send_heartbeat(websocket):
+    """Send periodic heartbeat to keep connection alive"""
+    while True:
+        try:
+            await websocket.send(json.dumps({"type": "heartbeat", "timestamp": time.time()}))
+            await asyncio.sleep(15)  # Send heartbeat every 15 seconds
+        except:
+            break
 
 async def keep_alive():
     """Periodically ping the server to keep it alive"""
@@ -135,6 +145,9 @@ async def handle_websocket(websocket, path):
         except Exception as e:
             logger.error(f"Error sending initial state: {str(e)}")
     
+    # Start heartbeat task
+    heartbeat_task = asyncio.create_task(send_heartbeat(websocket))
+    
     try:
         async for message in websocket:
             logger.debug(f"Received WebSocket message: {message}")
@@ -143,6 +156,7 @@ async def handle_websocket(websocket, path):
     except websockets.exceptions.ConnectionClosed:
         logger.info("WebSocket client disconnected")
     finally:
+        heartbeat_task.cancel()
         websocket_clients.remove(websocket)
 
 async def main():
@@ -155,7 +169,8 @@ async def main():
         HOST,
         PORT,
         process_request=process_request,
-        ping_interval=None,  # Disable ping to allow TCP connections
+        ping_interval=30,    # Add ping every 30 seconds
+        ping_timeout=10,     # Wait 10 seconds for pong response
         compression=None,
         max_size=10_485_760,  # 10MB max message size
         subprotocols=['bus-tracker']
