@@ -39,8 +39,34 @@ SERVER_IP = "bus-track-otfv.onrender.com"  # Using default Render.com URL
 SERVER_PORT = "80"  # Using standard HTTP port
 
 def send_at_command(command, timeout=1000):
+    """Send an AT command and wait for response"""
+    print(f"Sending: {command}")
+    
+    # Clear any pending data
+    while gsm_uart.any():
+        gsm_uart.read()
+    
+    # Send the command
     gsm_uart.write(command.encode() + b'\r\n')
-    response = wait_response(timeout)
+    time.sleep_ms(100)  # Short delay after sending
+    
+    # Wait for response
+    response = ""
+    start_time = time.ticks_ms()
+    
+    while (time.ticks_ms() - start_time) < timeout:
+        if gsm_uart.any():
+            try:
+                data = gsm_uart.read()
+                if data:
+                    response += data.decode('utf-8', 'ignore')
+                    if 'OK' in response or 'ERROR' in response:
+                        break
+            except Exception as e:
+                print(f"Read error: {str(e)}")
+        time.sleep_ms(100)
+    
+    print(f"Response: {response}")
     return response
 
 def wait_response(timeout=1000):
@@ -50,50 +76,76 @@ def wait_response(timeout=1000):
     while (time.ticks_ms() - start_time) < timeout:
         if gsm_uart.any():
             try:
-                # Read byte by byte and decode safely
-                byte = gsm_uart.read(1)
-                if byte:
+                # Read all available bytes
+                data = gsm_uart.read()
+                if data:
                     try:
-                        char = byte.decode('ascii', errors='replace')
-                        response += char
-                        print(char, end='')  # Print each character for debugging
+                        response += data.decode('ascii', errors='replace')
                     except:
                         continue
-                if "OK" in response or "ERROR" in response:
-                    print("\nResponse:", response)  # Print full response
+                
+                # Check for response completion
+                if "OK" in response or "ERROR" in response or "+CME ERROR" in response:
+                    print(f"Full response: {response}")  # Debug print
                     break
             except Exception as e:
-                print("Read error:", str(e))
-                continue
+                print(f"Read error: {str(e)}")
         time.sleep_ms(100)
+    
     return response
 
+# Initialize UART for GSM
+gsm_uart = None
+gsm_initialized = False
+
+def init_uart_gsm(baudrate=115200):
+    """Initialize GSM UART with specified baudrate"""
+    global gsm_uart, gsm_initialized
+    try:
+        print(f"\nInitializing GSM UART with baudrate {baudrate}...")
+        gsm_uart = UART(1, baudrate=baudrate, tx=Pin(4), rx=Pin(5))
+        gsm_initialized = True
+        return True
+    except Exception as e:
+        print(f"GSM UART Error: {str(e)}")
+        gsm_initialized = False
+        return False
+
 def init_gsm():
+    global gsm_uart, gsm_initialized
+    
     update_display("GSM Init", "Starting...")
     time.sleep(2)  # Give module time to stabilize
     
-    # Test AT command multiple times
-    for _ in range(10):
-        update_display("GSM Init", "Testing AT...")
-        response = send_at_command("AT")
-        if "OK" in response:
-            break
-        time.sleep(1)
-    else:
-        update_display("GSM Error", "AT Failed", "Check wiring")
-        time.sleep(2)
+    # Initialize UART first if not already initialized
+    if not gsm_initialized:
+        if not init_uart_gsm(9600):  # Start with 9600 baud
+            update_display("GSM Error", "UART Failed")
+            return False
+    
+    # Test AT command
+    update_display("GSM Init", "Testing AT...")
+    response = send_at_command("AT")
+    if "OK" not in response:
+        update_display("GSM Error", "AT Failed")
         return False
     
-    # Check SIM status
-    update_display("GSM Init", "Checking SIM...")
-    response = send_at_command("AT+CPIN?")
-    if "READY" not in response:
-        update_display("GSM Error", "SIM not ready", "Check SIM card")
-        time.sleep(2)
+    # Turn off echo
+    update_display("GSM Init", "Setup...")
+    response = send_at_command("ATE0")
+    if "OK" not in response:
+        update_display("GSM Error", "Echo Failed")
         return False
     
-    # Check signal quality
-    update_display("GSM Init", "Checking signal...")
+    # Check network registration
+    update_display("GSM Init", "Network...")
+    response = send_at_command("AT+CREG?")
+    if not (",1" in response or ",5" in response):
+        update_display("GSM Error", "No Network")
+        return False
+    
+    # Check signal strength
+    update_display("GSM Init", "Signal...")
     response = send_at_command("AT+CSQ")
     if "+CSQ:" in response:
         try:
@@ -106,59 +158,105 @@ def init_gsm():
         except:
             pass
     
-    # Wait for network registration
-    update_display("GSM Init", "Connecting to", "network...")
-    attempts = 0
-    while attempts < 20:  # Try for about 20 seconds
-        response = send_at_command("AT+CREG?")
-        if ",1" in response or ",5" in response:
-            module_status["gsm"]["network"] = True
-            module_status["gsm"]["status"] = "Network OK"
-            break
-        attempts += 1
-        update_display("GSM Init", f"Network try {attempts}")
-        time.sleep(0.5)
-    else:
-        update_display("GSM Error", "Network timeout", "Check coverage")
-        return False
-    
     # Configure GPRS
-    update_display("GSM Init", "Setting up", "internet...")
+    update_display("GSM Init", "Internet...")
     
-    # Disable GPRS first
-    send_at_command("AT+CIPSHUT")
+    # First, check if we're already registered to GPRS
+    response = send_at_command('AT+CGREG?')
+    if not (',1' in response or ',5' in response):
+        update_display("GSM Init", "Wait GPRS...")
+        time.sleep(2)
+        response = send_at_command('AT+CGREG?')
+        if not (',1' in response or ',5' in response):
+            update_display("GSM Error", "No GPRS")
+            return False
+    
+    # Shut down any existing connections
+    update_display("GSM Init", "Reset GPRS...")
+    send_at_command("AT+CIPSHUT", 2000)
+    time.sleep(1)
+    
+    # Disable all PDP contexts first
+    send_at_command("AT+SAPBR=0,1", 2000)
     time.sleep(1)
     
     # Set bearer settings for Ufone
+    update_display("GSM Init", "Set APN...")
     send_at_command('AT+SAPBR=3,1,"Contype","GPRS"')
-    send_at_command('AT+SAPBR=3,1,"APN","ufone.internet"')  # Ufone APN
+    response = send_at_command('AT+SAPBR=3,1,"APN","ufone.internet"')
+    if "OK" not in response:
+        update_display("GSM Error", "APN Failed")
+        return False
     time.sleep(1)
     
-    # Enable GPRS
-    attempts = 0
-    while attempts < 3:
-        update_display("GSM Init", f"GPRS try {attempts+1}")
-        response = send_at_command("AT+SAPBR=1,1")
+    # Try to enable GPRS multiple times
+    for attempt in range(3):
+        update_display("GSM Init", f"GPRS try {attempt+1}")
+        response = send_at_command("AT+SAPBR=1,1", 5000)
         if "OK" in response:
-            module_status["gsm"]["internet"] = True
-            module_status["gsm"]["status"] = "Internet OK"
-            module_status["gsm"]["last_connect"] = time.time()
-            update_display("GSM Ready", "Internet", "Connected")
-            return True
-        attempts += 1
+            # Verify we got an IP
+            response = send_at_command("AT+SAPBR=2,1", 2000)
+            if "+SAPBR: 1,1" in response:
+                module_status["gsm"]["internet"] = True
+                module_status["gsm"]["status"] = "Internet OK"
+                module_status["gsm"]["last_connect"] = time.time()
+                update_display("GSM Ready", "Connected")
+                return True
         time.sleep(2)
     
-    update_display("GSM Error", "GPRS Failed", "Check package")
+    update_display("GSM Error", "GPRS Failed")
     return False
 
 def connect_server():
     update_display("Server", "Connecting...")
+    # First check if GPRS is still active and get IP
+    response = send_at_command('AT+SAPBR=2,1', 2000)
+    print("GPRS Status:", response)  # Debug print
+    if '+SAPBR: 1,1' not in response:
+        # Try to re-establish GPRS
+        update_display("Server", "Restart GPRS")
+        send_at_command("AT+SAPBR=0,1", 2000)  # Disable bearer
+        time.sleep(1)
+        send_at_command('AT+SAPBR=3,1,"Contype","GPRS"')
+        send_at_command('AT+SAPBR=3,1,"APN","ufone.internet"')
+        response = send_at_command("AT+SAPBR=1,1", 5000)
+        if "OK" not in response:
+            update_display("Server", "No GPRS")
+            return False
     
-    # Start TCP connection
-    send_at_command('AT+CIPSTART="TCP","' + SERVER_IP + '",' + SERVER_PORT)
-    response = wait_response(5000)
+    # Configure TCP/IP
+    update_display("Server", "TCP Setup...")
+    send_at_command("AT+CIPSHUT", 2000)  # Reset TCP/IP
     
-    if "CONNECT OK" in response:
+    # Initialize TCP/IP
+    response = send_at_command("AT+CSTT=\"ufone.internet\"", 2000)
+    if "OK" not in response:
+        update_display("Server", "APN Failed")
+        return False
+    
+    # Bring up wireless connection
+    response = send_at_command("AT+CIICR", 10000)
+    if "OK" not in response:
+        update_display("Server", "CIICR Failed")
+        return False
+    
+    # Get IP address
+    response = send_at_command("AT+CIFSR", 2000)
+    print("IP Response:", response)  # Debug print
+    if not any(char.isdigit() for char in response):
+        update_display("Server", "No IP")
+        return False
+    
+    # Start TCP connection with longer timeout
+    update_display("Server", "TCP Connect...")
+    cmd = f'AT+CIPSTART="TCP","{SERVER_IP}",{SERVER_PORT}'
+    print("TCP Command:", cmd)  # Debug print
+    response = send_at_command(cmd, 15000)  # Increased timeout
+    time.sleep(1)
+    print("TCP Response:", response)  # Debug print
+    time.sleep(1)
+    
+    if "CONNECT OK" in response or "ALREADY CONNECT" in response:
         module_status["server"]["status"] = "Connected"
         module_status["server"]["connected"] = True
         module_status["server"]["last_send"] = time.time()
@@ -166,7 +264,7 @@ def connect_server():
         return True
     else:
         module_status["server"]["status"] = "Failed"
-        update_display("Server", "Connection", "Failed")
+        update_display("Server", "TCP Failed")
         return False
 
 def send_data(data):
@@ -234,15 +332,6 @@ except Exception as e:
     gps_initialized = False
     module_status["gps"]["status"] = "Error"
 
-# Initialize UART for GSM
-try:
-    print("\nInitializing GSM UART...")
-    gsm_uart = UART(1, baudrate=115200, tx=Pin(4), rx=Pin(5))
-    gsm_initialized = True
-except Exception as e:
-    print(f"GSM Error: {str(e)}")
-    gsm_initialized = False
-
 # Initialize I2C for OLED Display (128x64 resolution)
 try:
     print("\nInitializing I2C and OLED Display...")
@@ -270,7 +359,7 @@ def main():
     while not init_gsm():
         update_display("GSM Error", "Check SIM", "card & signal")
         time.sleep(2)
-
+    
     # Step 2: Connect to server
     while not module_status["server"]["connected"]:
         if connect_server():
@@ -370,3 +459,4 @@ def main():
 
 if __name__ == "__main__":
     main() 
+
