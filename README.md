@@ -1,6 +1,6 @@
 # Realtime Bus Tracking System
 
-This project implements a realtime bus tracking system using a Raspberry Pi Pico with GPS module and a web interface for live tracking. The system is deployed on Render.com for global accessibility.
+This project implements a realtime bus tracking system using a Raspberry Pi Pico with GPS module and a web interface for live tracking. The system is deployed and accessible globally.
 
 ## Project Structure
 
@@ -13,7 +13,7 @@ This project implements a realtime bus tracking system using a Raspberry Pi Pico
 
 ## Live Demo
 
-The system is deployed and accessible at: https://bus-track-otfv.onrender.com
+The system is deployed and accessible at: https://bus-tracker.devmartaz.online
 
 Access Key: `bus123`
 
@@ -85,7 +85,7 @@ The system is deployed on Render.com with the following configuration:
 
 ## Usage
 
-1. Access the web interface at https://bus-track-otfv.onrender.com
+1. Access the web interface at https://bus-tracker.devmartaz.online
 2. Enter the access key: `bus123`
 3. View real-time bus location on the map
 4. Use the control buttons to:

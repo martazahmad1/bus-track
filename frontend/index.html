@@ -746,7 +746,7 @@
             const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const wsUrl = window.location.hostname === 'localhost' 
                 ? 'ws://localhost:10000'
-                : `${wsProtocol}//${window.location.host}`;
+                : 'wss://bus-tracker.devmartaz.online';
 
             console.log('Connecting to WebSocket:', wsUrl);
             
