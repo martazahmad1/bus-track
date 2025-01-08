@@ -342,7 +342,6 @@ def main():
                     update_display(
                         "System Ready",
                         f"GPS:{module_status['gps']['status']}",
-                        f"Sats:{module_status['gps']['satellites']}",
                         f"GSM:{module_status['gsm']['status']}",
                         f"Srv:{module_status['server']['status']}"
                     )
@@ -360,7 +359,6 @@ def main():
         else:
             update_display(
                 f"GPS:{module_status['gps']['status']}",
-                f"Sats:{module_status['gps']['satellites']}",
                 f"GSM:{module_status['gsm']['status']}",
                 f"Srv:{module_status['server']['status']}",
                 "Wait GPS fix..."
@@ -370,3 +368,4 @@ def main():
 
 if __name__ == "__main__":
     main() 
+

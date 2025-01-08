@@ -399,7 +399,7 @@
         </div>
 
         <div class="data-box">
-            <h3>Current Location</h3>
+            <h3>Current Status</h3>
             <div class="data-item">
                 <span class="label">Latitude:</span>
                 <span class="value" id="current-lat">-</span>
@@ -407,6 +407,10 @@
             <div class="data-item">
                 <span class="label">Longitude:</span>
                 <span class="value" id="current-lon">-</span>
+            </div>
+            <div class="data-item">
+                <span class="label">Speed:</span>
+                <span class="value" id="current-speed">-</span> km/h
             </div>
             <div class="data-item">
                 <span class="label">Last Update:</span>
@@ -607,6 +611,10 @@
                                 document.getElementById('gps-status').textContent = status.gps.status;
                                 updateStatusIndicator(status.gps.status, 'gps-status-indicator');
                                 
+                                // Update speed
+                                document.getElementById('current-speed').textContent = 
+                                    status.gps.speed_kmh ? status.gps.speed_kmh.toFixed(1) : '-';
+                                
                                 // Update GSM status
                                 document.getElementById('gsm-status').textContent = status.gsm.status;
                                 updateStatusIndicator(status.gsm.status, 'gsm-status-indicator');
@@ -800,6 +808,10 @@
                     // Update GPS status
                     document.getElementById('gps-status').textContent = status.gps.status;
                     updateStatusIndicator(status.gps.status, 'gps-status-indicator');
+                    
+                    // Update speed
+                    document.getElementById('current-speed').textContent = 
+                        status.gps.speed_kmh ? status.gps.speed_kmh.toFixed(1) : '-';
                     
                     // Update GSM status
                     document.getElementById('gsm-status').textContent = status.gsm.status;

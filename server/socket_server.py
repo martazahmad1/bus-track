@@ -99,7 +99,7 @@ async def broadcast_to_websockets(data):
         # Remove disconnected clients
         for client in disconnected:
             if client in websocket_clients:
-            websocket_clients.remove(client)
+                websocket_clients.remove(client)
 
 async def process_request(path, request_headers):
     """Process HTTP requests before WebSocket upgrade"""
@@ -128,45 +128,32 @@ async def process_request(path, request_headers):
     # Return 404 for other paths
     return HTTPStatus.NOT_FOUND, [], b"404 Not Found"
 
-async def handle_websocket(websocket, path):
-    """Handle WebSocket connections"""
-    try:
-        # Log connection details
-        client_info = websocket.remote_address
-        logger.info(f"New WebSocket connection attempt from {client_info}")
-        logger.info(f"WebSocket headers: {websocket.request_headers}")
-        
-        # Add to clients set
-        websocket_clients.add(websocket)
-        logger.info(f"WebSocket client connected from {client_info}")
-        
-        # Send initial state if available
-        if last_known_position:
-            try:
-                await websocket.send(json.dumps(last_known_position))
-                logger.info(f"Sent initial state to new client")
-            except Exception as e:
-                logger.error(f"Error sending initial state: {str(e)}")
-        
+async def broadcast_message(message):
+    disconnected_clients = []
+    for client in websocket_clients:
         try:
-            async for message in websocket:
-                try:
-                    data = json.loads(message)
-                    logger.info(f"Received WebSocket message: {data}")
-                    await broadcast_to_websockets(data)
-                except json.JSONDecodeError:
-                    logger.warning(f"Invalid JSON from WebSocket client")
-        except Exception as e:
-            logger.error(f"WebSocket error: {str(e)}")
-        finally:
-            if websocket in websocket_clients:
-                websocket_clients.remove(websocket)
-            logger.info(f"WebSocket client disconnected")
-                    
-    except Exception as e:
-        logger.error(f"Connection error: {str(e)}")
-        if websocket in websocket_clients:
-            websocket_clients.remove(websocket)
+            await client.send(message)
+        except websockets.exceptions.ConnectionClosed:
+            disconnected_clients.append(client)
+    
+    # Remove disconnected clients
+    for client in disconnected_clients:
+        if client in websocket_clients:
+            websocket_clients.remove(client)
+            logger.info("Removed disconnected client")
+
+async def handle_websocket(websocket, path):
+    logger.info("New WebSocket client connected")
+    websocket_clients.add(websocket)
+    try:
+        async for message in websocket:
+            logger.debug(f"Received WebSocket message: {message}")
+            # Handle any client messages if needed
+            pass
+    except websockets.exceptions.ConnectionClosed:
+        logger.info("WebSocket client disconnected")
+    finally:
+        websocket_clients.remove(websocket)
 
 async def main():
     """Main function to start the server"""
