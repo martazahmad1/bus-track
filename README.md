@@ -13,7 +13,7 @@ This project implements a realtime bus tracking system using a Raspberry Pi Pico
 
 ## Live Demo
 
-The system is deployed and accessible at: https://bus-tracker.devmartaz.online
+The system is deployed and accessible at: https://bustracker.devmartaz.online
 
 Access Key: `bus123`
 
@@ -85,7 +85,7 @@ The system is deployed on Render.com with the following configuration:
 
 ## Usage
 
-1. Access the web interface at https://bus-tracker.devmartaz.online
+1. Access the web interface at https://bustracker.devmartaz.online
 2. Enter the access key: `bus123`
 3. View real-time bus location on the map
 4. Use the control buttons to:

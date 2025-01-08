@@ -24,100 +24,122 @@
             --warning-color: #ff9800;
         }
 
+        /* Base styles */
         body {
             margin: 0;
             padding: 0;
-            display: flex;
             font-family: Arial, sans-serif;
-            min-height: 100vh;
-            flex-direction: column;
-        }
-
-        @media (min-width: 768px) {
-            body {
-                flex-direction: row;
-            }
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+            font-size: 14px;
         }
 
         #left-panel {
-            width: var(--panel-width-mobile);
+            width: 300px;
+            height: 100vh;
+            position: fixed;
+            top: 0;
+            left: 0;
             background: var(--panel-background);
-            padding: 15px;
-            height: auto;
-            max-height: 50vh;
             overflow-y: auto;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-            z-index: 1000;
-        }
-
-        @media (min-width: 768px) {
-            #left-panel {
-                width: var(--panel-width);
-                height: 100vh;
-                max-height: 100vh;
-                box-shadow: 2px 0 5px rgba(0,0,0,0.1);
-            }
+            padding: 20px;
+            box-sizing: border-box;
+            z-index: 2;
         }
 
         #map-container {
-            flex: 1;
-            height: 50vh;
-            position: relative;
-        }
-
-        @media (min-width: 768px) {
-            #map-container {
-                height: 100vh;
-            }
+            position: fixed;
+            top: 0;
+            left: 300px;
+            right: 0;
+            bottom: 0;
+            z-index: 1;
         }
 
         #map {
-            height: 100%;
             width: 100%;
+            height: 100%;
         }
+
+        .map-controls {
+            position: fixed;
+            top: 20px;
+            left: 320px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .map-button {
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid rgba(0, 0, 0, 0.2);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+            border-radius: 4px;
+            padding: 8px 12px;
+            font-size: 12px;
+            cursor: pointer;
+            min-width: 100px;
+            text-align: center;
+        }
+
+        .fullscreen-btn {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid rgba(0, 0, 0, 0.2);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+            border-radius: 4px;
+            padding: 10px;
+            cursor: pointer;
+        }
+
+        #panel-toggle {
+            display: none;
+        }
+
+        /* Remove all media queries and mobile-specific styles */
 
         .data-box {
             background: white;
-            padding: 15px;
+            padding: 12px;
             border-radius: 8px;
-            margin-bottom: 15px;
+            margin-bottom: 12px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.05);
         }
 
         .data-box h3 {
-            margin-bottom: 12px;
+            font-size: 14px;
+            margin-bottom: 8px;
             color: var(--text-primary);
-            font-size: 16px;
-            font-weight: 600;
         }
 
         .data-item {
-            margin-bottom: 10px;
-            font-size: 14px;
             display: flex;
-            align-items: center;
-            flex-wrap: wrap;
+            justify-content: space-between;
+            margin-bottom: 6px;
+            font-size: 12px;
         }
 
         .label {
-            font-weight: 600;
             color: var(--text-secondary);
-            margin-right: 8px;
             min-width: 100px;
         }
 
         .value {
             color: var(--text-primary);
-            flex: 1;
+            text-align: right;
         }
 
         .status-indicator {
-            display: inline-block;
-            width: 10px;
-            height: 10px;
+            width: 8px;
+            height: 8px;
             border-radius: 50%;
-            margin-right: 8px;
-            position: relative;
+            display: inline-block;
+            margin-right: 6px;
         }
 
         .status-indicator::after {
@@ -190,10 +212,10 @@
         }
 
         .history-item {
-            padding: 10px;
+            font-size: 11px;
+            padding: 6px;
             border-bottom: 1px solid #eee;
-            font-size: 13px;
-            transition: background-color 0.2s;
+            color: var(--text-secondary);
         }
 
         .history-item:hover {
@@ -223,32 +245,6 @@
             background: #555;
         }
 
-        /* Toggle button for mobile */
-        #panel-toggle {
-            display: none;
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            z-index: 1001;
-            background: white;
-            border: none;
-            border-radius: 50%;
-            width: 50px;
-            height: 50px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-            cursor: pointer;
-        }
-
-        @media (max-width: 767px) {
-            #panel-toggle {
-                display: block;
-            }
-
-            #left-panel.hidden {
-                display: none;
-            }
-        }
-
         /* Authentication overlay */
         #auth-overlay {
             position: fixed;
@@ -265,83 +261,35 @@
 
         .auth-box {
             background: white;
-            padding: 30px;
-            border-radius: 12px;
+            padding: 20px;
+            border-radius: 10px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.2);
             width: 90%;
-            max-width: 400px;
+            max-width: 300px;
             text-align: center;
         }
 
         .auth-box h2 {
-            color: var(--text-primary);
-            margin-bottom: 20px;
+            font-size: 16px;
+            margin-bottom: 15px;
         }
 
         .auth-box input {
             width: 100%;
-            padding: 12px;
-            margin: 10px 0;
+            padding: 10px;
+            margin: 8px 0;
             border: 2px solid #ddd;
             border-radius: 6px;
-            font-size: 16px;
-            transition: border-color 0.3s;
-        }
-
-        .auth-box input:focus {
-            border-color: #4CAF50;
-            outline: none;
+            font-size: 14px;
         }
 
         .auth-box button {
-            background: #4CAF50;
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            border-radius: 6px;
-            font-size: 16px;
-            cursor: pointer;
-            transition: background-color 0.3s;
-        }
-
-        .auth-box button:hover {
-            background: #45a049;
-        }
-
-        /* Map controls */
-        .map-controls {
-            position: absolute;
-            bottom: 20px;
-            left: 20px;
-            z-index: 1000;
-            display: flex;
-            gap: 10px;
-        }
-
-        .map-button {
-            background: white;
-            border: none;
-            padding: 10px;
-            border-radius: 6px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            gap: 5px;
+            padding: 10px 20px;
             font-size: 14px;
-            transition: all 0.3s;
         }
 
-        .map-button:hover {
-            background: #f5f5f5;
-            transform: translateY(-2px);
-        }
-
-        /* Error message */
         .error-message {
-            color: var(--error-color);
-            margin-top: 10px;
-            font-size: 14px;
+            font-size: 12px;
         }
 
         /* Loading spinner */
@@ -361,23 +309,6 @@
             100% { transform: rotate(360deg); }
         }
 
-        .fullscreen-btn {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            z-index: 1000;
-            background: white;
-            border: 2px solid rgba(0,0,0,0.2);
-            border-radius: 4px;
-            padding: 5px;
-            cursor: pointer;
-            box-shadow: 0 1px 5px rgba(0,0,0,0.65);
-        }
-
-        .fullscreen-btn:hover {
-            background: #f4f4f4;
-        }
-
         .fullscreen-icon {
             width: 30px;
             height: 30px;
@@ -391,154 +322,21 @@
             background-image: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZD0iTTE0IDE0aDV2MmgtN1Y5aDJ2NXpNNSA1aDV2MkgzdjdoMnYtNXpNMTAgM3Y2aDhWM2gtOHpNMyAxOWg4di02SDN2NnoiLz48L3N2Zz4=');
         }
 
-        @media (max-width: 767px) {
-            #left-panel {
-                width: var(--panel-width-mobile);
-                height: auto;
-                max-height: 40vh;
-                font-size: 12px;
-            }
-
-            .data-box h3 {
-                font-size: 14px;
-            }
-
-            .data-item {
-                font-size: 12px;
-                margin-bottom: 6px;
-            }
-
-            .label {
-                min-width: 80px;
-            }
-
-            #map-container {
-                height: 60vh;
-            }
-
-            .history-item {
-                font-size: 11px;
-                padding: 6px;
-            }
+        /* Add LED display styles */
+        .led-display {
+            background: #000;
+            padding: 10px;
+            border-radius: 6px;
+            font-family: monospace;
+            color: #33ff33;
+            line-height: 1.1;
+            margin-top: 8px;
         }
-
-        @media (max-width: 767px) {
-            body {
-                height: auto;
-                min-height: 100vh;
-                overflow-y: auto;
-            }
-        }
-
-        .map-controls {
-            position: absolute;
-            bottom: 20px;
-            left: 20px;
-            z-index: 1000;
-            display: flex;
-            gap: 10px;
-        }
-
-        @media (max-width: 767px) {
-            #map-container {
-                position: fixed;
-                top: var(--panel-height-mobile);
-                left: 0;
-                right: 0;
-                bottom: 0;
-                width: 100%;
-                height: calc(100vh - var(--panel-height-mobile));
-                z-index: 1;
-            }
-
-            #map {
-                width: 100%;
-                height: 100%;
-            }
-
-            #left-panel {
-                --panel-height-mobile: 40vh;
-                height: var(--panel-height-mobile);
-                width: 100%;
-                position: fixed;
-                top: 0;
-                left: 0;
-                right: 0;
-                z-index: 2;
-                background: var(--panel-background);
-            }
-
-            .map-controls {
-                position: fixed;
-                top: calc(var(--panel-height-mobile) + 10px);
-                left: 10px;
-                z-index: 1000;
-                display: flex;
-                flex-direction: column;
-                gap: 5px;
-                max-width: calc(100% - 20px);
-            }
-
-            .map-button {
-                background: rgba(255, 255, 255, 0.9);
-                border: 1px solid rgba(0, 0, 0, 0.2);
-                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-                border-radius: 4px;
-                padding: 8px 12px;
-                font-size: 14px;
-                height: auto;
-                min-height: 36px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                white-space: nowrap;
-                width: auto;
-                min-width: 120px;
-                margin: 0;
-                backdrop-filter: blur(4px);
-            }
-
-            .fullscreen-btn {
-                position: fixed;
-                top: calc(var(--panel-height-mobile) + 10px);
-                right: 10px;
-                z-index: 1000;
-            }
-
-            body {
-                margin: 0;
-                padding: 0;
-                overflow: hidden;
-                height: 100vh;
-                width: 100vw;
-            }
-
-            /* Ensure the panel toggle is above everything */
-            #panel-toggle {
-                z-index: 2001;
-            }
-        }
-
-        /* Make map buttons more compact on mobile */
-        @media (max-width: 767px) {
-            .map-button {
-                background: rgba(255, 255, 255, 0.9);
-                border: 1px solid rgba(0, 0, 0, 0.2);
-                box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
-                border-radius: 4px;
-                margin: 0;
-                padding: 6px 8px;
-                font-size: 11px;
-                height: 28px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                white-space: nowrap;
-            }
-
-            .map-controls {
-                max-width: calc(100% - 60px); /* Leave space for fullscreen button */
-            }
+        .led-line {
+            white-space: pre;
+            margin: 0;
+            padding: 0;
+            font-size: 11px;
         }
     </style>
 </head>
@@ -632,6 +430,13 @@
             <h3>Location History</h3>
             <div id="history">
                 <!-- History items will be added here -->
+            </div>
+        </div>
+
+        <div class="data-box">
+            <h3>LED Display Content</h3>
+            <div id="led-display" class="led-display">
+                <!-- LED content will be added here -->
             </div>
         </div>
     </div>
@@ -744,11 +549,11 @@
 
         function initializeWebSocket() {
             const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = window.location.hostname === 'localhost' 
+        const wsUrl = window.location.hostname === 'localhost' 
                 ? 'ws://localhost:10000'
                 : 'wss://bus-track-otfv.onrender.com';
 
-            console.log('Connecting to WebSocket:', wsUrl);
+        console.log('Connecting to WebSocket:', wsUrl);
             
             try {
                 const ws = new WebSocket(wsUrl, 'bus-tracker');
@@ -809,6 +614,12 @@
                                 // Update OLED status
                                 document.getElementById('oled-status').textContent = status.oled.status;
                                 updateStatusIndicator(status.oled.status, 'oled-status-indicator');
+
+                                // Update LED display content
+                                const ledDisplay = document.getElementById('led-display');
+                                ledDisplay.innerHTML = status.oled.display_content
+                                    .map(line => `<div class="led-line">${line || ' '}</div>`)
+                                    .join('');
                             }
                             
                             // Update location if available
@@ -997,6 +808,12 @@
                     // Update OLED status
                     document.getElementById('oled-status').textContent = status.oled.status;
                     updateStatusIndicator(status.oled.status, 'oled-status-indicator');
+
+                    // Update LED display content
+                    const ledDisplay = document.getElementById('led-display');
+                    ledDisplay.innerHTML = status.oled.display_content
+                        .map(line => `<div class="led-line">${line || ' '}</div>`)
+                        .join('');
                 }
                 
                 // Update location if available

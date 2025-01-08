@@ -99,7 +99,7 @@ async def broadcast_to_websockets(data):
         # Remove disconnected clients
         for client in disconnected:
             if client in websocket_clients:
-                websocket_clients.remove(client)
+            websocket_clients.remove(client)
 
 async def process_request(path, request_headers):
     """Process HTTP requests before WebSocket upgrade"""
@@ -162,7 +162,7 @@ async def handle_websocket(websocket, path):
             if websocket in websocket_clients:
                 websocket_clients.remove(websocket)
             logger.info(f"WebSocket client disconnected")
-            
+                    
     except Exception as e:
         logger.error(f"Connection error: {str(e)}")
         if websocket in websocket_clients:
